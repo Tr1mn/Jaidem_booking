@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ky">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Зал брондоо</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="/Jaidem_booking/assets/index-DRdxj1WS.js"></script>
+  <link rel="stylesheet" crossorigin href="/Jaidem_booking/assets/index-5NgIA-A3.css">
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">🏛 Jaidem</div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPage('booking', this)">📅 Брондоо</button>
+    <button class="nav-tab" onclick="showPage('admin', this)">🛡 Администратор</button>
+  </div>
+</nav>
+
+<div id="page-booking" class="page active">
+  <div class="booking-wrap">
+    <div class="page-header">
+      <h1>Зал брондоо</h1>
+      <p>Арызды берүү үчүн формага толтуруңуз</p>
+    </div>
+
+    <div class="card">
+      <div class="step-label">1-кадам — Залды тандаңыз</div>
+      <div class="hall-grid" id="hallGrid"></div>
+    </div>
+
+    <div class="card">
+      <div class="step-label">2-кадам — Күндү тандаңыз</div>
+      <div class="calendar-header">
+        <button class="cal-nav" onclick="changeMonth(-1)">‹</button>
+        <h3 id="calTitle"></h3>
+        <button class="cal-nav" onclick="changeMonth(1)">›</button>
+      </div>
+      <div class="calendar-grid" id="calGrid"></div>
+
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Бош</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>Жарым-жартылай</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Ээленген</div>
+      </div>
+
+      <div id="daySchedule" style="display:none; margin-top:16px; border-top:2px solid var(--border); padding-top:14px;">
+        <div id="dayScheduleTitle" style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--primary-light);margin-bottom:10px;"></div>
+        <div id="dayTimeline"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="step-label">3-кадам — Убакыт (09:00 – 00:00)</div>
+      <div class="time-row">
+        <div class="time-field">
+          <label>Башталышы</label>
+          <input type="time" id="timeStart" min="09:00" max="23:59" value="09:00" onchange="validateTime()">
+        </div>
+        <div class="time-field">
+          <label>Аякташы</label>
+          <input type="time" id="timeEnd" min="09:00" max="23:59" value="10:00" onchange="validateTime()">
+        </div>
+      </div>
+      <div class="time-error" id="timeError"></div>
+    </div>
+
+    <div class="card">
+      <div class="step-label">4-кадам — Ким брондойт</div>
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="personSearch" placeholder="Атын жаза баштаңыз..." oninput="searchPerson(this.value)" autocomplete="off">
+        <div class="dropdown" id="personDropdown" style="display:none"></div>
+      </div>
+
+      <div class="selected-person" id="selectedPersonEl" style="display:none">
+        <div class="avatar" id="selectedAvatar"></div>
+        <div>
+          <div class="name" id="selectedName"></div>
+          <div class="person-role" id="selectedRole"></div>
+        </div>
+        <button class="clear-btn" onclick="clearPerson()">✕</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="step-label">5-кадам — Брондоонун максаты</div>
+      <div class="desc-chips" id="descChips"></div>
+      <textarea class="desc-textarea" id="descTextarea" rows="3" placeholder="Брондоонун максатын сүрөттөңүз..."></textarea>
+    </div>
+
+    <button class="submit-btn" id="submitBtn" onclick="submitBooking()">Арызды жөнөтүү →</button>
+
+    <div class="success-banner" id="successBanner">
+      <span class="icon">✅</span>
+      <p>Арыз ийгиликтүү жөнөтүлдү! Администратордун тастыктоосун күтүңүз.</p>
+    </div>
+  </div>
+</div>
+
+<div id="page-admin" class="page">
+  <div class="admin-wrap">
+    <div class="page-header">
+      <h1>Администратор панели</h1>
+      <p>Брондоо арыздарын башкаруу</p>
+
+      <div style="margin-top:16px; display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="submit-btn" style="width:auto; padding:12px 18px;" onclick="openPlaceModal()">➕ Жаңы зал кошуу</button>
+      </div>
+    </div>
+
+    <div class="admin-tabs">
+      <button class="admin-tab active" onclick="filterAdmin('all', this)">Бардык арыздар</button>
+      <button class="admin-tab" onclick="filterAdmin('pending', this)">Каралууда <span class="badge" id="pendingBadge">0</span></button>
+      <button class="admin-tab" onclick="filterAdmin('approved', this)">Тастыкталган</button>
+      <button class="admin-tab" onclick="filterAdmin('rejected', this)">Четке кагылган</button>
+      <button class="admin-tab" onclick="filterAdmin('question', this)">Суроо бар</button>
+    </div>
+
+    <div id="adminList"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3>💬 Арыз берүүчүгө суроо</h3>
+    <textarea id="modalQuestion" rows="4" placeholder="Суроо же тактоо жазыңыз..."></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Жокко чыгаруу</button>
+      <button class="btn-send" onclick="sendQuestion()">Суроону жөнөтүү</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="placeModalOverlay">
+  <div class="modal">
+    <h3>🏛 Жаңы зал кошуу</h3>
+    <div style="display:grid; gap:12px; margin-top:14px;">
+      <input id="placeName" type="text" placeholder="Залдын аты" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); font:inherit;">
+      <input id="placeAddress" type="text" placeholder="Дареги" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); font:inherit;">
+      <input id="placeIcon" type="text" placeholder="Иконка (мисалы: 📚)" maxlength="4" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); font:inherit;">
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-cancel" onclick="closePlaceModal()">Жокко чыгаруу</button>
+      <button class="btn-send" onclick="createPlace()">Сактоо</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+
+</body>
+</html>

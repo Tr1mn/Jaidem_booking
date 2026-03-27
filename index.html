@@ -1,23 +1,22 @@
 <!DOCTYPE html>
 <html lang="ky">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Зал брондоо</title>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Зал брондоо</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
 <nav>
   <div class="nav-logo">🏛 Jaidem</div>
   <div class="nav-tabs">
-    <button class="nav-tab active" onclick="showPage('booking')">📅 Брондоо</button>
-    <button class="nav-tab" onclick="showPage('admin')">🛡 Администратор</button>
+    <button class="nav-tab active" onclick="showPage('booking', this)">📅 Брондоо</button>
+    <button class="nav-tab" onclick="showPage('admin', this)">🛡 Администратор</button>
   </div>
 </nav>
 
-<!-- ══════════════ BOOKING PAGE ══════════════ -->
 <div id="page-booking" class="page active">
   <div class="booking-wrap">
     <div class="page-header">
@@ -25,24 +24,11 @@
       <p>Арызды берүү үчүн формага толтуруңуз</p>
     </div>
 
-    <!-- STEP 1: HALL -->
     <div class="card">
       <div class="step-label">1-кадам — Залды тандаңыз</div>
-      <div class="hall-grid" id="hallGrid">
-        <button class="hall-btn" onclick="selectHall(this,'Шота Руставелли 46 — Китепкана')" data-hall="Шота Руставелли 46 — Китепкана">
-          <div class="hall-icon">📚</div>
-          <div class="hall-name">Китепкана</div>
-          <div class="hall-cap">Шота Руставелли 46</div>
-        </button>
-        <button class="hall-btn" onclick="selectHall(this,'Шота Руставелли 46 — Тренинг залы')" data-hall="Шота Руставелли 46 — Тренинг залы">
-          <div class="hall-icon">🎓</div>
-          <div class="hall-name">Тренинг залы</div>
-          <div class="hall-cap">Шота Руставелли 46</div>
-        </button>
-      </div>
+      <div class="hall-grid" id="hallGrid"></div>
     </div>
 
-    <!-- STEP 2: DATE -->
     <div class="card">
       <div class="step-label">2-кадам — Күндү тандаңыз</div>
       <div class="calendar-header">
@@ -51,18 +37,19 @@
         <button class="cal-nav" onclick="changeMonth(1)">›</button>
       </div>
       <div class="calendar-grid" id="calGrid"></div>
+
       <div class="legend">
         <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Бош</div>
         <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>Жарым-жартылай</div>
         <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Ээленген</div>
       </div>
+
       <div id="daySchedule" style="display:none; margin-top:16px; border-top:2px solid var(--border); padding-top:14px;">
         <div id="dayScheduleTitle" style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--primary-light);margin-bottom:10px;"></div>
         <div id="dayTimeline"></div>
       </div>
     </div>
 
-    <!-- STEP 3: TIME -->
     <div class="card">
       <div class="step-label">3-кадам — Убакыт (09:00 – 00:00)</div>
       <div class="time-row">
@@ -78,7 +65,6 @@
       <div class="time-error" id="timeError"></div>
     </div>
 
-    <!-- STEP 4: PERSON -->
     <div class="card">
       <div class="step-label">4-кадам — Ким брондойт</div>
       <div class="search-wrap">
@@ -86,6 +72,7 @@
         <input type="text" id="personSearch" placeholder="Атын жаза баштаңыз..." oninput="searchPerson(this.value)" autocomplete="off">
         <div class="dropdown" id="personDropdown" style="display:none"></div>
       </div>
+
       <div class="selected-person" id="selectedPersonEl" style="display:none">
         <div class="avatar" id="selectedAvatar"></div>
         <div>
@@ -96,21 +83,14 @@
       </div>
     </div>
 
-    <!-- STEP 5: DESCRIPTION -->
     <div class="card">
       <div class="step-label">5-кадам — Брондоонун максаты</div>
-      <div class="desc-chips" id="descChips">
-        <button class="chip selected" onclick="selectDesc(this,'Тренинг')">🎓 Тренинг</button>
-        <button class="chip" onclick="selectDesc(this,'Жыйын')">📋 Жыйын</button>
-        <button class="chip" onclick="selectDesc(this,'Презентация')">📊 Презентация</button>
-        <button class="chip" onclick="selectDesc(this,'Интервью')">🎤 Интервью</button>
-        <button class="chip" onclick="selectDesc(this,'Башка')">✏️ Башка</button>
-      </div>
+      <div class="desc-chips" id="descChips"></div>
       <textarea class="desc-textarea" id="descTextarea" rows="3" placeholder="Брондоонун максатын сүрөттөңүз..."></textarea>
     </div>
 
-    <!-- SUBMIT -->
     <button class="submit-btn" id="submitBtn" onclick="submitBooking()">Арызды жөнөтүү →</button>
+
     <div class="success-banner" id="successBanner">
       <span class="icon">✅</span>
       <p>Арыз ийгиликтүү жөнөтүлдү! Администратордун тастыктоосун күтүңүз.</p>
@@ -118,24 +98,29 @@
   </div>
 </div>
 
-<!-- ══════════════ ADMIN PAGE ══════════════ -->
 <div id="page-admin" class="page">
   <div class="admin-wrap">
     <div class="page-header">
       <h1>Администратор панели</h1>
       <p>Брондоо арыздарын башкаруу</p>
+
+      <div style="margin-top:16px; display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="submit-btn" style="width:auto; padding:12px 18px;" onclick="openPlaceModal()">➕ Жаңы зал кошуу</button>
+      </div>
     </div>
+
     <div class="admin-tabs">
-      <button class="admin-tab active" onclick="filterAdmin('all',this)">Бардык арыздар</button>
-      <button class="admin-tab" onclick="filterAdmin('pending',this)">Каралууда <span class="badge" id="pendingBadge">0</span></button>
-      <button class="admin-tab" onclick="filterAdmin('approved',this)">Тастыкталган</button>
-      <button class="admin-tab" onclick="filterAdmin('rejected',this)">Четке кагылган</button>
+      <button class="admin-tab active" onclick="filterAdmin('all', this)">Бардык арыздар</button>
+      <button class="admin-tab" onclick="filterAdmin('pending', this)">Каралууда <span class="badge" id="pendingBadge">0</span></button>
+      <button class="admin-tab" onclick="filterAdmin('approved', this)">Тастыкталган</button>
+      <button class="admin-tab" onclick="filterAdmin('rejected', this)">Четке кагылган</button>
+      <button class="admin-tab" onclick="filterAdmin('question', this)">Суроо бар</button>
     </div>
+
     <div id="adminList"></div>
   </div>
 </div>
 
-<!-- MODAL -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <h3>💬 Арыз берүүчүгө суроо</h3>
@@ -147,443 +132,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="placeModalOverlay">
+  <div class="modal">
+    <h3>🏛 Жаңы зал кошуу</h3>
+    <div style="display:grid; gap:12px; margin-top:14px;">
+      <input id="placeName" type="text" placeholder="Залдын аты" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); font:inherit;">
+      <input id="placeAddress" type="text" placeholder="Дареги" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); font:inherit;">
+      <input id="placeIcon" type="text" placeholder="Иконка (мисалы: 📚)" maxlength="4" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); font:inherit;">
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-cancel" onclick="closePlaceModal()">Жокко чыгаруу</button>
+      <button class="btn-send" onclick="createPlace()">Сактоо</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<script>
-// ─── STATE ───────────────────────────────────────
-let selectedHall   = null;
-let selectedDate   = null;
-let selectedPerson = null;
-let selectedDesc   = 'Тренинг';
-let currentYear, currentMonth;
-let adminFilter      = 'all';
-let questionTargetId = null;
+<script type="module" src="/main.js"></script>
 
-// ─── PEOPLE DATABASE ─────────────────────────────
-const people = [
-  { id:1, name:'Айгүл Асанова',      role:'HR менеджер',    initials:'АА' },
-  { id:2, name:'Бекзат Дүйшөнов',    role:'Бөлүм башчысы',  initials:'БД' },
-  { id:3, name:'Гүлнара Исакова',    role:'Адис',           initials:'ГИ' },
-  { id:4, name:'Даниар Жумабеков',   role:'Тренер',         initials:'ДЖ' },
-  { id:5, name:'Жазгүл Токтосунова', role:'Аналитик',       initials:'ЖТ' },
-  { id:6, name:'Кубаныч Маматов',    role:'Директор',       initials:'КМ' },
-  { id:7, name:'Назгүл Бекова',      role:'Бухгалтер',      initials:'НБ' },
-  { id:8, name:'Самат Эргешов',      role:'IT адис',        initials:'СЭ' },
-];
-
-// ─── BOOKED SLOTS ────────────────────────────────
-const hallBookedSlots = {
-  'Шота Руставелли 46 — Китепкана': {
-    3:  [{ start:540,  end:720,  bookedBy:'Даниар Жумабеков',   role:'Тренер' }],
-    7:  [{ start:540,  end:1440, bookedBy:'Кубаныч Маматов',    role:'Директор' }],
-    12: [{ start:540,  end:780,  bookedBy:'Айгүл Асанова',      role:'HR менеджер' },
-         { start:840,  end:960,  bookedBy:'Бекзат Дүйшөнов',    role:'Бөлүм башчысы' }],
-    18: [{ start:900,  end:1020, bookedBy:'Назгүл Бекова',      role:'Бухгалтер' }],
-    25: [{ start:540,  end:1440, bookedBy:'Самат Эргешов',      role:'IT адис' }],
-  },
-  'Шота Руставелли 46 — Тренинг залы': {
-    2:  [{ start:540,  end:1440, bookedBy:'Кубаныч Маматов',    role:'Директор' }],
-    5:  [{ start:600,  end:720,  bookedBy:'Гүлнара Исакова',    role:'Адис' }],
-    10: [{ start:540,  end:660,  bookedBy:'Жазгүл Токтосунова', role:'Аналитик' },
-         { start:720,  end:840,  bookedBy:'Даниар Жумабеков',   role:'Тренер' }],
-    14: [{ start:540,  end:1440, bookedBy:'Бекзат Дүйшөнов',    role:'Бөлүм башчысы' }],
-    20: [{ start:900,  end:1080, bookedBy:'Айгүл Асанова',      role:'HR менеджер' }],
-    27: [{ start:540,  end:660,  bookedBy:'Назгүл Бекова',      role:'Бухгалтер' }],
-  },
-};
-
-function getSlots() {
-  return (selectedHall && hallBookedSlots[selectedHall]) ? hallBookedSlots[selectedHall] : {};
-}
-
-// ─── ADMIN REQUESTS ──────────────────────────────
-let adminRequests = [];
-
-// ─── CALENDAR ────────────────────────────────────
-const MONTHS_KY = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-const DAYS_KY   = ['Дш','Шш','Шр','Бш','Жм','Иш','Жк'];
-
-function initCalendar() {
-  const now    = new Date();
-  currentYear  = now.getFullYear();
-  currentMonth = now.getMonth();
-  renderCalendar();
-}
-
-function renderCalendar() {
-  document.getElementById('calTitle').textContent = `${MONTHS_KY[currentMonth]} ${currentYear}`;
-
-  const grid = document.getElementById('calGrid');
-  grid.innerHTML = DAYS_KY.map(d => `<div class="cal-day-name">${d}</div>`).join('');
-
-  const firstDay    = new Date(currentYear, currentMonth, 1).getDay();
-  const offset      = (firstDay === 0) ? 6 : firstDay - 1;
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const today       = new Date(); today.setHours(0, 0, 0, 0);
-
-  for (let i = 0; i < offset; i++) {
-    grid.innerHTML += `<div class="cal-day empty"></div>`;
-  }
-
-  for (let d = 1; d <= daysInMonth; d++) {
-    const date     = new Date(currentYear, currentMonth, d);
-    const isPast   = date < today;
-    const color    = getDayColor(d);
-    const sel      = (selectedDate &&
-                      selectedDate.getDate()    === d &&
-                      selectedDate.getMonth()   === currentMonth &&
-                      selectedDate.getFullYear()=== currentYear) ? 'selected' : '';
-    const pastCls  = isPast ? 'past' : '';
-    const disabled = (color === 'red' || isPast) ? 'disabled' : '';
-    grid.innerHTML += `<button class="cal-day ${color} ${sel} ${pastCls}" ${disabled} onclick="selectDay(${d})">${d}</button>`;
-  }
-}
-
-function getDayColor(d) {
-  if (!selectedHall) return 'green';
-  const slots = getSlots()[d];
-  if (!slots) return 'green';
-  const totalBooked = slots.reduce((s, sl) => s + (sl.end - sl.start), 0);
-  if (totalBooked >= 840) return 'red';
-  if (totalBooked > 0)    return 'yellow';
-  return 'green';
-}
-
-function changeMonth(dir) {
-  currentMonth += dir;
-  if (currentMonth > 11) { currentMonth = 0;  currentYear++; }
-  if (currentMonth < 0)  { currentMonth = 11; currentYear--; }
-  selectedDate = null;
-  document.getElementById('daySchedule').style.display = 'none';
-  renderCalendar();
-}
-
-function selectDay(d) {
-  const color = getDayColor(d);
-  if (color === 'red') return;
-  selectedDate = new Date(currentYear, currentMonth, d);
-  renderCalendar();
-  validateTime();
-  renderDaySchedule(d, color);
-}
-
-function renderDaySchedule(d, color) {
-  const panel    = document.getElementById('daySchedule');
-  const titleEl  = document.getElementById('dayScheduleTitle');
-  const timeline = document.getElementById('dayTimeline');
-
-  if (color === 'green') { panel.style.display = 'none'; return; }
-
-  const slots     = (getSlots()[d] || []).slice().sort((a, b) => a.start - b.start);
-  const DAY_START = 540;
-  const DAY_END   = 1440;
-  const segments  = [];
-  let cursor      = DAY_START;
-
-  for (const slot of slots) {
-    if (cursor < slot.start) segments.push({ type:'free', start:cursor, end:slot.start });
-    segments.push({ type:'busy', start:slot.start, end:slot.end, bookedBy:slot.bookedBy, role:slot.role });
-    cursor = slot.end;
-  }
-  if (cursor < DAY_END) segments.push({ type:'free', start:cursor, end:DAY_END });
-
-  const aylar = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
-  titleEl.textContent = `📅 ${d} ${aylar[currentMonth]} күнүнүн графиги`;
-
-  timeline.innerHTML = segments.map(seg => {
-    const endLabel = seg.end === 1440 ? '00:00' : minToStr(seg.end);
-    if (seg.type === 'busy') {
-      const initials = seg.bookedBy ? seg.bookedBy.split(' ').map(w => w[0]).join('').slice(0, 2) : '?';
-      return `<div class="timeline-row busy" style="align-items:center;justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div class="timeline-dot"></div>
-          <div>
-            <div class="timeline-time" style="color:var(--red);">🔴 ${minToStr(seg.start)} – ${endLabel}</div>
-            <div style="font-size:11px;color:var(--red);opacity:0.8;margin-top:2px;">Ээленген</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:7px;background:rgba(255,71,87,0.12);border-radius:10px;padding:5px 10px;">
-          <div style="width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;flex-shrink:0;">${initials}</div>
-          <div>
-            <div style="font-size:12px;font-weight:800;color:var(--red);">${seg.bookedBy || '—'}</div>
-            <div style="font-size:10px;color:var(--red);opacity:0.75;">${seg.role || ''}</div>
-          </div>
-        </div>
-      </div>`;
-    } else {
-      return `<div class="timeline-row free">
-        <div class="timeline-dot"></div>
-        <div class="timeline-time">🟢 ${minToStr(seg.start)} – ${endLabel}</div>
-        <div class="timeline-label">Бош</div>
-      </div>`;
-    }
-  }).join('');
-
-  panel.style.display = 'block';
-}
-
-// ─── TIME VALIDATION ─────────────────────────────
-function toMin(timeStr) {
-  const [h, m] = timeStr.split(':').map(Number);
-  return h * 60 + m;
-}
-function minToStr(m) {
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-}
-
-function validateTime() {
-  const errEl    = document.getElementById('timeError');
-  const ts       = document.getElementById('timeStart').value;
-  const te       = document.getElementById('timeEnd').value;
-  if (!ts || !te) { errEl.textContent = ''; return false; }
-
-  const startMin = toMin(ts);
-  const endMin   = toMin(te);
-
-  if (startMin < 540) {
-    errEl.textContent = '⛔ Брондоо 09:00дан башталат'; return false;
-  }
-  if (endMin < startMin + 30) {
-    errEl.textContent = '⛔ Минималдуу узактыгы — 30 мүнөт'; return false;
-  }
-  if (endMin > 1440) {
-    errEl.textContent = '⛔ Максималдуу аяктоо убактысы — 00:00'; return false;
-  }
-  if (selectedDate) {
-    const day   = selectedDate.getDate();
-    const slots = (getSlots()[day]) || [];
-    for (const slot of slots) {
-      if (startMin < slot.end && endMin > slot.start) {
-        errEl.textContent = `⛔ Убакыт ээленген убакыт менен кесилишет (${minToStr(slot.start)}–${minToStr(slot.end)})`;
-        return false;
-      }
-    }
-  }
-  errEl.textContent = '';
-  return true;
-}
-
-// ─── HALL SELECT ─────────────────────────────────
-function selectHall(btn, hall) {
-  document.querySelectorAll('.hall-btn').forEach(b => b.classList.remove('selected'));
-  btn.classList.add('selected');
-  selectedHall = hall;
-  selectedDate = null;
-  document.getElementById('daySchedule').style.display = 'none';
-  renderCalendar();
-  validateTime();
-}
-
-// ─── PERSON SEARCH ───────────────────────────────
-function searchPerson(q) {
-  const dd = document.getElementById('personDropdown');
-  if (!q) { dd.style.display = 'none'; return; }
-  const results = people.filter(p => p.name.toLowerCase().includes(q.toLowerCase()));
-  if (!results.length) { dd.style.display = 'none'; return; }
-  dd.innerHTML = results.map(p => `
-    <div class="dropdown-item" onclick="choosePerson(${p.id})">
-      <div class="avatar">${p.initials}</div>
-      <div>
-        <div style="font-weight:700">${p.name}</div>
-        <div class="person-role">${p.role}</div>
-      </div>
-    </div>`).join('');
-  dd.style.display = 'block';
-}
-
-function choosePerson(id) {
-  const p = people.find(x => x.id === id);
-  selectedPerson = p;
-  document.getElementById('personSearch').value             = '';
-  document.getElementById('personDropdown').style.display   = 'none';
-  document.getElementById('selectedAvatar').textContent     = p.initials;
-  document.getElementById('selectedName').textContent       = p.name;
-  document.getElementById('selectedRole').textContent       = p.role;
-  document.getElementById('selectedPersonEl').style.display = 'flex';
-}
-
-function clearPerson() {
-  selectedPerson = null;
-  document.getElementById('selectedPersonEl').style.display = 'none';
-}
-
-document.addEventListener('click', e => {
-  if (!e.target.closest('.search-wrap'))
-    document.getElementById('personDropdown').style.display = 'none';
-});
-
-// ─── DESCRIPTION CHIPS ───────────────────────────
-function selectDesc(btn, val) {
-  document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
-  btn.classList.add('selected');
-  selectedDesc = val;
-  const ta = document.getElementById('descTextarea');
-  if (val === 'Башка') { ta.classList.add('visible'); }
-  else { ta.classList.remove('visible'); ta.value = ''; }
-}
-
-// ─── SUBMIT ──────────────────────────────────────
-function submitBooking() {
-  if (!selectedHall)   { showToast('❗ Залды тандаңыз'); return; }
-  if (!selectedDate)   { showToast('❗ Күндү тандаңыз'); return; }
-  if (!validateTime()) { showToast('❗ Убакытты текшериңиз'); return; }
-  if (!selectedPerson) { showToast('❗ Арыз берүүчүнү тандаңыз'); return; }
-
-  const desc = selectedDesc === 'Башка'
-    ? (document.getElementById('descTextarea').value.trim() || 'Башка')
-    : selectedDesc;
-
-  const ts = document.getElementById('timeStart').value;
-  const te = document.getElementById('timeEnd').value;
-
-  const req = {
-    id: Date.now(),
-    hall: selectedHall,
-    date: selectedDate.toLocaleDateString('ru-RU'),
-    timeStart: ts,
-    timeEnd: te,
-    person: selectedPerson,
-    desc,
-    status: 'pending',
-    question: null,
-    created: new Date().toLocaleString('ru-RU'),
-  };
-  adminRequests.unshift(req);
-
-  // Жаңы брондоону графикте да көрсөтүү үчүн слоттарга кош
-  const day = selectedDate.getDate();
-  if (!hallBookedSlots[selectedHall]) hallBookedSlots[selectedHall] = {};
-  if (!hallBookedSlots[selectedHall][day]) hallBookedSlots[selectedHall][day] = [];
-  hallBookedSlots[selectedHall][day].push({
-    start:    toMin(ts),
-    end:      toMin(te),
-    bookedBy: selectedPerson.name,
-    role:     selectedPerson.role,
-  });
-
-  updatePendingBadge();
-  document.getElementById('successBanner').classList.add('show');
-  document.getElementById('submitBtn').disabled = true;
-  showToast('✅ Арыз жөнөтүлдү!');
-
-  setTimeout(() => {
-    document.getElementById('successBanner').classList.remove('show');
-    document.getElementById('submitBtn').disabled = false;
-    selectedHall = null; selectedDate = null; selectedPerson = null; selectedDesc = 'Тренинг';
-    document.querySelectorAll('.hall-btn').forEach(b => b.classList.remove('selected'));
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
-    document.querySelector('.chip').classList.add('selected');
-    document.getElementById('descTextarea').classList.remove('visible');
-    document.getElementById('descTextarea').value = '';
-    clearPerson();
-    initCalendar();
-  }, 3500);
-}
-
-// ─── ADMIN ───────────────────────────────────────
-function filterAdmin(f, btn) {
-  adminFilter = f;
-  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  renderAdmin();
-}
-
-function renderAdmin() {
-  const list     = document.getElementById('adminList');
-  const filtered = adminFilter === 'all'
-    ? adminRequests
-    : adminRequests.filter(r => r.status === adminFilter);
-
-  if (!filtered.length) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>Арыздар жок</p></div>`;
-    return;
-  }
-
-  const statusLabel = {
-    pending:  'Каралууда',
-    approved: 'Тастыкталган',
-    rejected: 'Четке кагылган',
-    question: 'Суроо бар',
-  };
-
-  list.innerHTML = filtered.map(r => `
-    <div class="request-card ${r.status}" id="req-${r.id}">
-      <div class="req-header">
-        <div>
-          <div class="req-title">${r.hall}</div>
-          <div class="req-meta">Берген: ${r.person.name} · ${r.person.role} · ${r.created}</div>
-        </div>
-        <span class="status-badge ${r.status}">${statusLabel[r.status]}</span>
-      </div>
-      <div class="req-details">
-        <div class="req-detail">📅 ${r.date}</div>
-        <div class="req-detail">🕐 ${r.timeStart} – ${r.timeEnd}</div>
-        <div class="req-detail">🎯 ${r.desc}</div>
-      </div>
-      ${r.question ? `<div style="background:var(--primary-soft);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;color:var(--primary);margin-bottom:12px">💬 Суроо жөнөтүлдү: «${r.question}»</div>` : ''}
-      ${r.status === 'pending' || r.status === 'question' ? `
-      <div class="req-actions">
-        <button class="btn-sm btn-approve"  onclick="setStatus(${r.id},'approved')">✅ Тастыктоо</button>
-        <button class="btn-sm btn-reject"   onclick="setStatus(${r.id},'rejected')">❌ Четке кагуу</button>
-        <button class="btn-sm btn-question" onclick="openModal(${r.id})">💬 Суроо берүү</button>
-      </div>` : ''}
-    </div>`).join('');
-}
-
-function setStatus(id, status) {
-  const r = adminRequests.find(x => x.id === id);
-  if (r) r.status = status;
-  updatePendingBadge();
-  renderAdmin();
-  showToast(status === 'approved' ? '✅ Арыз тастыкталды' : '❌ Арыз четке кагылды');
-}
-
-function openModal(id) {
-  questionTargetId = id;
-  document.getElementById('modalQuestion').value = '';
-  document.getElementById('modalOverlay').classList.add('open');
-}
-
-function closeModal() {
-  document.getElementById('modalOverlay').classList.remove('open');
-  questionTargetId = null;
-}
-
-function sendQuestion() {
-  const q = document.getElementById('modalQuestion').value.trim();
-  if (!q) { showToast('❗ Суроону жазыңыз'); return; }
-  const r = adminRequests.find(x => x.id === questionTargetId);
-  if (r) { r.status = 'question'; r.question = q; }
-  closeModal();
-  updatePendingBadge();
-  renderAdmin();
-  showToast('💬 Суроо арыз берүүчүгө жөнөтүлдү');
-}
-
-function updatePendingBadge() {
-  document.getElementById('pendingBadge').textContent =
-    adminRequests.filter(r => r.status === 'pending').length;
-}
-
-// ─── PAGES ───────────────────────────────────────
-function showPage(p) {
-  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
-  document.getElementById('page-' + p).classList.add('active');
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
-  if (p === 'admin') renderAdmin();
-}
-
-// ─── TOAST ───────────────────────────────────────
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2800);
-}
-
-// ─── INIT ────────────────────────────────────────
-initCalendar();
-</script>
 </body>
 </html>

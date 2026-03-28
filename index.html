@@ -4,13 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Зал брондоо</title>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
 <nav>
-  <div class="nav-logo">🏛 Jaidem</div>
+  <div class="nav-logo">
+    <span class="nav-logo-mark">J</span>
+    <div class="nav-logo-copy">
+      <strong>Jaidem</strong>
+      <span>booking</span>
+    </div>
+  </div>
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="showPage('booking', this)">📅 Брондоо</button>
     <button class="nav-tab" onclick="showPage('admin', this)">🛡 Администратор</button>
@@ -20,6 +26,7 @@
 <div id="page-booking" class="page active">
   <div class="booking-wrap">
     <div class="page-header">
+      <div class="page-kicker">Jaidem booking</div>
       <h1>Зал брондоо</h1>
       <p>Арызды берүү үчүн формага толтуруңуз</p>
     </div>
@@ -101,6 +108,7 @@
 <div id="page-admin" class="page">
   <div class="admin-wrap">
     <div class="page-header">
+      <div class="page-kicker">Jaidem admin</div>
       <h1>Администратор панели</h1>
       <p>Брондоо арыздарын башкаруу</p>
 

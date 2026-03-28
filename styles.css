@@ -292,6 +292,15 @@ nav {
   opacity: 0.72;
 }
 
+.card-search {
+  overflow: visible;
+  z-index: 6;
+}
+
+.card-search::before {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
 .step-label {
   margin-bottom: 18px;
   color: var(--primary-light);
@@ -589,6 +598,7 @@ nav {
 
 .search-wrap {
   position: relative;
+  z-index: 8;
 }
 
 .search-icon {

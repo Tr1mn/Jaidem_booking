@@ -632,6 +632,15 @@ nav {
   transform: translateX(2px);
 }
 
+.dropdown-empty {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(93, 42, 134, 0.06);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .avatar {
   width: 42px;
   height: 42px;

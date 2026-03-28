@@ -385,20 +385,112 @@ function selectHall(hallId) {
   validateTime();
 }
 
+function normalizeSearchText(value) {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function transliterateCyrillicToLatin(value) {
+  const map = {
+    а: "a",
+    б: "b",
+    в: "v",
+    г: "g",
+    д: "d",
+    е: "e",
+    ё: "yo",
+    ж: "zh",
+    з: "z",
+    и: "i",
+    й: "i",
+    к: "k",
+    л: "l",
+    м: "m",
+    н: "n",
+    ң: "ng",
+    о: "o",
+    ө: "o",
+    п: "p",
+    р: "r",
+    с: "s",
+    т: "t",
+    у: "u",
+    ү: "u",
+    ф: "f",
+    х: "h",
+    ц: "ts",
+    ч: "ch",
+    ш: "sh",
+    щ: "sh",
+    ъ: "",
+    ы: "y",
+    ь: "",
+    э: "e",
+    ю: "yu",
+    я: "ya"
+  };
+
+  return normalizeSearchText(value)
+    .split("")
+    .map(char => map[char] ?? char)
+    .join("");
+}
+
+function getPersonSearchTokens(person) {
+  const fields = [
+    person.name || "",
+    person.role || "",
+    person.initials || ""
+  ];
+
+  return fields.flatMap(field => {
+    const normalized = normalizeSearchText(field);
+    const transliterated = transliterateCyrillicToLatin(field);
+    return [normalized, transliterated].filter(Boolean);
+  });
+}
+
 function searchPerson(queryText) {
   const dropdown = document.getElementById("personDropdown");
+  const query = normalizeSearchText(queryText);
 
-  if (!queryText.trim()) {
+  if (!query) {
     dropdown.style.display = "none";
     return;
   }
 
+  if (!state.people.length) {
+    dropdown.innerHTML = `
+      <div class="dropdown-empty">
+        Адамдардын тизмеси жүктөлгөн жок же азырынча бош.
+      </div>
+    `;
+    dropdown.style.display = "block";
+    return;
+  }
+
+  const queryVariants = [
+    query,
+    transliterateCyrillicToLatin(query)
+  ].filter(Boolean);
+
   const results = state.people.filter(person =>
-    (person.name || "").toLowerCase().includes(queryText.toLowerCase())
+    getPersonSearchTokens(person).some(token =>
+      queryVariants.some(queryVariant => token.includes(queryVariant))
+    )
   );
 
   if (!results.length) {
-    dropdown.style.display = "none";
+    dropdown.innerHTML = `
+      <div class="dropdown-empty">
+        Суроо боюнча адам табылган жок.
+      </div>
+    `;
+    dropdown.style.display = "block";
     return;
   }
 

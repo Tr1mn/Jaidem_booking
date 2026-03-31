@@ -575,7 +575,6 @@ function updateAuthUI() {
   const profilePanel = document.getElementById("authProfilePanel");
   const nameField = document.getElementById("authNameField");
   const submitBtn = document.getElementById("authSubmitBtn");
-  const helperText = document.getElementById("authHelperText");
   const bookingSubmitBtn = document.getElementById("submitBtn");
   const navSessionLabel = document.getElementById("navSessionLabel");
   const navLogoutBtn = document.getElementById("navLogoutBtn");
@@ -597,10 +596,6 @@ function updateAuthUI() {
   submitBtn.textContent = state.authPending
     ? (state.authMode === "login" ? "Кирүү..." : "Катталуу...")
     : (state.authMode === "login" ? "Кирүү" : "Катталуу");
-
-  helperText.textContent = state.authMode === "login"
-    ? "Колдонуучу катары кириңиз. Админ мүмкүнчүлүк Firebase'деги role=admin менен берилет."
-    : "Жаңы аккаунттар коопсуздук үчүн кадимки user ролу менен түзүлөт.";
 
   bookingSubmitBtn.disabled = !isLoggedIn;
   bookingSubmitBtn.textContent = isLoggedIn ? "Арызды жөнөтүү →" : "Алгач кириңиз же катталыңыз";

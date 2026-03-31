@@ -31,14 +31,31 @@ service cloud.firestore {
       return value is string && value.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$");
     }
 
+    function validOptionalGroupNumber() {
+      return !request.resource.data.keys().hasAny(["groupNumber"])
+        || (
+          request.resource.data.groupNumber is string
+          && request.resource.data.groupNumber.matches("^[0-9]+\\.[0-9]+$")
+        );
+    }
+
+    function validOptionalRequestGroupNumber() {
+      return !request.resource.data.keys().hasAny(["userGroupNumber"])
+        || (
+          request.resource.data.userGroupNumber is string
+          && request.resource.data.userGroupNumber.matches("^[0-9]+\\.[0-9]+$")
+        );
+    }
+
     function validUserProfileShape(uid) {
-      return request.resource.data.keys().hasOnly(["uid", "email", "name", "role", "createdAt", "updatedAt"])
+      return request.resource.data.keys().hasOnly(["uid", "email", "name", "role", "groupNumber", "createdAt", "updatedAt"])
         && request.resource.data.uid == uid
         && request.resource.data.email is string
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 2
         && request.resource.data.name.size() <= 80
-        && request.resource.data.role in ["user", "admin"];
+        && request.resource.data.role in ["user", "admin"]
+        && validOptionalGroupNumber();
     }
 
     function validOwnProfileCreate(uid) {
@@ -74,6 +91,7 @@ service cloud.firestore {
           "userId",
           "userName",
           "userEmail",
+          "userGroupNumber",
           "date",
           "dateKey",
           "timeStart",
@@ -93,6 +111,7 @@ service cloud.firestore {
         && request.resource.data.userName is string
         && request.resource.data.userName.size() >= 2
         && request.resource.data.userName.size() <= 80
+        && validOptionalRequestGroupNumber()
         && request.resource.data.date is string
         && request.resource.data.date.size() <= 40
         && validDateKey(request.resource.data.dateKey)
@@ -117,6 +136,7 @@ service cloud.firestore {
           "userId",
           "userName",
           "userEmail",
+          "userGroupNumber",
           "date",
           "dateKey",
           "timeStart",
@@ -134,6 +154,10 @@ service cloud.firestore {
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.userName == resource.data.userName
         && request.resource.data.userEmail == resource.data.userEmail
+        && (
+          (!request.resource.data.keys().hasAny(["userGroupNumber"]) && !resource.data.keys().hasAny(["userGroupNumber"]))
+          || request.resource.data.userGroupNumber == resource.data.userGroupNumber
+        )
         && request.resource.data.date == resource.data.date
         && request.resource.data.dateKey == resource.data.dateKey
         && request.resource.data.timeStart == resource.data.timeStart
@@ -143,7 +167,8 @@ service cloud.firestore {
         && request.resource.data.desc == resource.data.desc
         && request.resource.data.status in ["pending", "approved", "rejected", "question"]
         && request.resource.data.question is string
-        && request.resource.data.question.size() <= 500;
+        && request.resource.data.question.size() <= 500
+        && validOptionalRequestGroupNumber();
     }
 
     function validBookingWrite(hallId) {

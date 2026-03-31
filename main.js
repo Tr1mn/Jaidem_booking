@@ -137,6 +137,34 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function normalizeGroupNumber(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/,/g, ".")
+    .slice(0, 10);
+}
+
+function isValidGroupNumber(value) {
+  return /^[0-9]+\.[0-9]+$/.test(value);
+}
+
+function formatGroupLabel(value) {
+  const normalized = normalizeGroupNumber(value);
+  return normalized ? `Топ ${normalized}` : "";
+}
+
+function getUserMeta(user) {
+  if (!user) {
+    return "";
+  }
+
+  return [
+    user.email || "",
+    formatGroupLabel(user.groupNumber || "")
+  ].filter(Boolean).join(" · ");
+}
+
 function getInitials(value) {
   const parts = sanitizeSingleLine(value, 80).split(" ").filter(Boolean);
 
@@ -206,40 +234,60 @@ function buildBookingsMap(snapshot) {
   return bookingsMap;
 }
 
-async function ensureUserProfile(user, preferredName = "") {
+async function ensureUserProfile(user, preferredName = "", preferredGroupNumber = "") {
   const userRef = doc(db, "users", user.uid);
   const existing = await getDoc(userRef);
   const fallbackName = sanitizeSingleLine(preferredName || user.displayName || user.email?.split("@")[0] || "Колдонуучу", 80);
- 
+  const fallbackGroupNumber = normalizeGroupNumber(preferredGroupNumber);
+
   if (!existing.exists()) {
-    await setDoc(userRef, {
+    const newProfile = {
       uid: user.uid,
       email: normalizeEmail(user.email || ""),
       name: fallbackName,
       role: "user",
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
-    });
+    };
+
+    if (fallbackGroupNumber) {
+      newProfile.groupNumber = fallbackGroupNumber;
+    }
+
+    await setDoc(userRef, newProfile);
 
     return {
       uid: user.uid,
       email: normalizeEmail(user.email || ""),
       name: fallbackName,
-      role: "user"
+      role: "user",
+      groupNumber: fallbackGroupNumber
     };
   }
 
   const profile = existing.data();
+  const normalizedGroupNumber = normalizeGroupNumber(profile.groupNumber || fallbackGroupNumber);
   const normalizedProfile = {
     uid: user.uid,
     email: normalizeEmail(profile.email || user.email || ""),
     name: sanitizeSingleLine(profile.name || fallbackName, 80) || fallbackName,
-    role: profile.role === "admin" ? "admin" : "user"
+    role: profile.role === "admin" ? "admin" : "user",
+    groupNumber: normalizedGroupNumber
   };
 
+  const profileUpdates = {};
+
   if (!profile.name && fallbackName) {
+    profileUpdates.name = fallbackName;
+  }
+
+  if (!profile.groupNumber && fallbackGroupNumber) {
+    profileUpdates.groupNumber = fallbackGroupNumber;
+  }
+
+  if (Object.keys(profileUpdates).length) {
     await updateDoc(userRef, {
-      name: fallbackName,
+      ...profileUpdates,
       updatedAt: serverTimestamp()
     });
   }
@@ -252,14 +300,21 @@ async function loadUserRequests(uid, halls) {
     return [];
   }
 
-  const requestSnapshots = await Promise.all(
+  const requestSnapshots = await Promise.allSettled(
     halls.map(hall =>
       getDocs(query(collection(db, "halls", hall.id, "bookingRequests"), where("userId", "==", uid)))
     )
   );
 
   return requestSnapshots
-    .flatMap(snapshot => snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })))
+    .flatMap((snapshot, index) => {
+      if (snapshot.status !== "fulfilled") {
+        console.error(`Failed to load booking requests for hall ${halls[index]?.id || "unknown"}:`, snapshot.reason);
+        return [];
+      }
+
+      return snapshot.value.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+    })
     .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt));
 }
 
@@ -277,31 +332,54 @@ async function refreshAppData() {
   }
 
   try {
-    const tasks = [
+    const [hallsResult, bookingsResult, adminRequestsResult] = await Promise.allSettled([
       getDocs(query(collection(db, "halls"), orderBy("createdAt", "asc"))),
-      getDocs(collectionGroup(db, "bookings"))
-    ];
+      getDocs(collectionGroup(db, "bookings")),
+      isAdmin() ? getDocs(collectionGroup(db, "bookingRequests")) : Promise.resolve(null)
+    ]);
 
-    if (isAdmin()) {
-      tasks.push(getDocs(collectionGroup(db, "bookingRequests")));
+    let hasPartialFailure = false;
+
+    if (hallsResult.status === "fulfilled") {
+      state.halls = hallsResult.value.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+    } else {
+      hasPartialFailure = true;
+      state.halls = [];
+      console.error("Failed to load halls:", hallsResult.reason);
     }
 
-    const [hallsSnap, bookingsSnap, adminRequestsSnap] = await Promise.all(tasks);
+    if (bookingsResult.status === "fulfilled") {
+      state.bookings = buildBookingsMap(bookingsResult.value);
+    } else {
+      hasPartialFailure = true;
+      state.bookings = {};
+      console.error("Failed to load bookings:", bookingsResult.reason);
+    }
 
-    state.halls = hallsSnap.docs.map(docSnap => ({
-      id: docSnap.id,
-      ...docSnap.data()
-    }));
+    try {
+      state.myRequests = await loadUserRequests(state.currentUser.uid, state.halls);
+    } catch (error) {
+      hasPartialFailure = true;
+      state.myRequests = [];
+      console.error("Failed to load current user requests:", error);
+    }
 
-    state.bookings = buildBookingsMap(bookingsSnap);
-
-    state.myRequests = await loadUserRequests(state.currentUser.uid, state.halls);
-
-    state.adminRequests = isAdmin() && adminRequestsSnap
-      ? adminRequestsSnap.docs
-        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
-        .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt))
-      : [];
+    if (isAdmin()) {
+      if (adminRequestsResult.status === "fulfilled" && adminRequestsResult.value) {
+        state.adminRequests = adminRequestsResult.value.docs
+          .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+          .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt));
+      } else {
+        hasPartialFailure = true;
+        state.adminRequests = [];
+        console.error("Failed to load admin requests:", adminRequestsResult.status === "rejected" ? adminRequestsResult.reason : "No data");
+      }
+    } else {
+      state.adminRequests = [];
+    }
 
     if (state.selectedHall) {
       state.selectedHall = state.halls.find(hall => hall.id === state.selectedHall.id) || null;
@@ -319,8 +397,19 @@ async function refreshAppData() {
     renderAdmin();
     updatePendingBadge();
     updateAuthUI();
+
+    if (hasPartialFailure) {
+      showToast("⚠️ Айрым Firebase маалыматтары толук жүктөлгөн жок");
+    }
   } catch (error) {
     console.error("Failed to load Firestore data:", error);
+    renderHallOptions();
+    renderCalendar();
+    renderBookingIdentity();
+    renderMyRequests();
+    renderAdmin();
+    updatePendingBadge();
+    updateAuthUI();
     showToast("⚠️ Firebase маалымат жүктөлгөн жок");
   }
 }
@@ -587,6 +676,7 @@ function updateAuthUI() {
   const guestPanel = document.getElementById("authGuestPanel");
   const profilePanel = document.getElementById("authProfilePanel");
   const nameField = document.getElementById("authNameField");
+  const groupField = document.getElementById("authGroupField");
   const submitBtn = document.getElementById("authSubmitBtn");
   const bookingSubmitBtn = document.getElementById("submitBtn");
   const navSessionLabel = document.getElementById("navSessionLabel");
@@ -601,6 +691,7 @@ function updateAuthUI() {
   guestPanel.style.display = isLoggedIn ? "none" : "block";
   profilePanel.style.display = isLoggedIn ? "block" : "none";
   nameField.style.display = state.authMode === "register" ? "block" : "none";
+  groupField.style.display = state.authMode === "register" ? "block" : "none";
 
   loginModeBtn.classList.toggle("active", state.authMode === "login");
   registerModeBtn.classList.toggle("active", state.authMode === "register");
@@ -625,7 +716,7 @@ function updateAuthUI() {
   if (isLoggedIn) {
     document.getElementById("authUserAvatar").textContent = getInitials(currentUser.name);
     document.getElementById("authUserName").textContent = currentUser.name;
-    document.getElementById("authUserMeta").textContent = currentUser.email;
+    document.getElementById("authUserMeta").textContent = getUserMeta(currentUser);
     document.getElementById("authUserRole").textContent = roleLabel(currentUser.role);
   }
 
@@ -654,7 +745,7 @@ function renderBookingIdentity() {
     <div class="avatar">${escapeHtml(getInitials(state.currentUser.name))}</div>
     <div>
       <div class="name">${escapeHtml(state.currentUser.name)}</div>
-      <div class="person-role">${escapeHtml(state.currentUser.email)}</div>
+      <div class="person-role">${escapeHtml(getUserMeta(state.currentUser))}</div>
     </div>
     <span class="role-pill">${escapeHtml(roleLabel(state.currentUser.role))}</span>
   `;
@@ -703,6 +794,7 @@ function renderMyRequests() {
             <div class="req-details">
               <div class="req-detail">📅 ${escapeHtml(request.date || "")}</div>
               <div class="req-detail">🕐 ${escapeHtml(request.timeStart || "")} – ${escapeHtml(request.timeEnd || "")}</div>
+              ${request.userGroupNumber ? `<div class="req-detail">🎓 ${escapeHtml(formatGroupLabel(request.userGroupNumber))}</div>` : ""}
               <div class="req-detail">🎯 ${escapeHtml(request.desc || "")}</div>
             </div>
             ${questionBlock}
@@ -761,26 +853,31 @@ async function submitBooking() {
   const timeStart = document.getElementById("timeStart").value;
   const timeEnd = document.getElementById("timeEnd").value;
   const dateKey = formatDateForApi(state.selectedDate);
+  const bookingRequest = {
+    hallId: state.selectedHall.id,
+    hallName: sanitizeSingleLine(state.selectedHall.name, 120),
+    userId: state.currentUser.uid,
+    userName: sanitizeSingleLine(state.currentUser.name, 80),
+    userEmail: normalizeEmail(state.currentUser.email),
+    date: formatDateForDisplay(state.selectedDate),
+    dateKey,
+    timeStart,
+    timeEnd,
+    startMin: toMin(timeStart),
+    endMin: toMin(timeEnd),
+    desc: description || "Башка",
+    status: "pending",
+    question: "",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+
+  if (state.currentUser.groupNumber) {
+    bookingRequest.userGroupNumber = normalizeGroupNumber(state.currentUser.groupNumber);
+  }
 
   try {
-    await addDoc(collection(db, "halls", state.selectedHall.id, "bookingRequests"), {
-      hallId: state.selectedHall.id,
-      hallName: sanitizeSingleLine(state.selectedHall.name, 120),
-      userId: state.currentUser.uid,
-      userName: sanitizeSingleLine(state.currentUser.name, 80),
-      userEmail: normalizeEmail(state.currentUser.email),
-      date: formatDateForDisplay(state.selectedDate),
-      dateKey,
-      timeStart,
-      timeEnd,
-      startMin: toMin(timeStart),
-      endMin: toMin(timeEnd),
-      desc: description || "Башка",
-      status: "pending",
-      question: "",
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
+    await addDoc(collection(db, "halls", state.selectedHall.id, "bookingRequests"), bookingRequest);
 
     await refreshAppData();
 
@@ -849,7 +946,7 @@ function renderAdmin() {
           <div>
             <div class="req-title">${escapeHtml(request.hallName || "")}</div>
             <div class="req-meta">
-              Берген: ${escapeHtml(request.userName || "")} · ${escapeHtml(request.userEmail || "")} · ${escapeHtml(getRequestMeta(request))}
+              Берген: ${escapeHtml(request.userName || "")} · ${escapeHtml(request.userEmail || "")}${request.userGroupNumber ? ` · ${escapeHtml(formatGroupLabel(request.userGroupNumber))}` : ""} · ${escapeHtml(getRequestMeta(request))}
             </div>
           </div>
           <span class="status-badge ${requestStatus}">${escapeHtml(statusLabel(requestStatus))}</span>
@@ -858,6 +955,7 @@ function renderAdmin() {
         <div class="req-details">
           <div class="req-detail">📅 ${escapeHtml(request.date || "")}</div>
           <div class="req-detail">🕐 ${escapeHtml(request.timeStart || "")} – ${escapeHtml(request.timeEnd || "")}</div>
+          ${request.userGroupNumber ? `<div class="req-detail">🎓 ${escapeHtml(formatGroupLabel(request.userGroupNumber))}</div>` : ""}
           <div class="req-detail">🎯 ${escapeHtml(request.desc || "")}</div>
         </div>
 
@@ -1116,6 +1214,7 @@ async function submitAuth() {
   const email = normalizeEmail(document.getElementById("authEmail").value);
   const password = document.getElementById("authPassword").value;
   const name = sanitizeSingleLine(document.getElementById("authName").value, 80);
+  const groupNumber = normalizeGroupNumber(document.getElementById("authGroupNumber").value);
 
   if (!isValidEmail(email)) {
     showToast("❗ Туура email жазыңыз");
@@ -1132,6 +1231,11 @@ async function submitAuth() {
     return;
   }
 
+  if (state.authMode === "register" && !isValidGroupNumber(groupNumber)) {
+    showToast("❗ Топ номерин 1.0 форматында жазыңыз");
+    return;
+  }
+
   state.authPending = true;
   updateAuthUI();
 
@@ -1140,7 +1244,7 @@ async function submitAuth() {
       const credentials = await createUserWithEmailAndPassword(auth, email, password);
 
       await updateProfile(credentials.user, { displayName: name });
-      state.currentUser = await ensureUserProfile(credentials.user, name);
+      state.currentUser = await ensureUserProfile(credentials.user, name, groupNumber);
       await refreshAppData();
       showToast("✅ Аккаунт түзүлдү");
     } else {
@@ -1151,6 +1255,7 @@ async function submitAuth() {
     document.getElementById("authPassword").value = "";
     if (state.authMode === "register") {
       document.getElementById("authName").value = "";
+      document.getElementById("authGroupNumber").value = "";
     }
   } catch (error) {
     console.error("Auth action failed:", error);
@@ -1191,7 +1296,7 @@ window.setAuthMode = setAuthMode;
 window.logoutUser = logoutUser;
 
 function attachAuthInputHandlers() {
-  ["authName", "authEmail", "authPassword"].forEach(id => {
+  ["authName", "authGroupNumber", "authEmail", "authPassword"].forEach(id => {
     const element = document.getElementById(id);
 
     element.addEventListener("keydown", event => {

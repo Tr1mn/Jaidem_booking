@@ -1079,6 +1079,9 @@ function selectDesc(value) {
 
 function getAuthErrorMessage(error) {
   switch (error?.code) {
+    case "auth/configuration-not-found":
+    case "auth/operation-not-allowed":
+      return "Firebase Authentication даяр эмес. Firebase Console'до Email/Password кирүүсүн күйгүзүңүз.";
     case "auth/email-already-in-use":
       return "Бул email менен аккаунт мурунтан бар.";
     case "auth/invalid-email":

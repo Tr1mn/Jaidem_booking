@@ -146,6 +146,12 @@ nav {
   color: var(--accent-strong);
 }
 
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .nav-tabs {
   display: flex;
   gap: 10px;
@@ -176,6 +182,39 @@ nav {
   background: linear-gradient(135deg, var(--primary-dark), var(--primary-light));
   color: #fff;
   box-shadow: 0 18px 32px rgba(93, 42, 134, 0.24);
+}
+
+.nav-tab:disabled,
+.nav-tab.locked {
+  opacity: 0.72;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.nav-session {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(93, 42, 134, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.nav-ghost-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(93, 42, 134, 0.08);
+  color: var(--primary-dark);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .page {
@@ -268,6 +307,115 @@ nav {
   font-size: 15px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.82);
+}
+
+.auth-shell,
+.auth-panel,
+.auth-profile {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-copy h2 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(24px, 4vw, 30px);
+  color: var(--primary-dark);
+}
+
+.auth-copy p {
+  margin: 8px 0 0;
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.auth-toggle {
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px;
+  width: fit-content;
+  border: 1px solid rgba(93, 42, 134, 0.08);
+  border-radius: 999px;
+  background: rgba(247, 238, 249, 0.82);
+}
+
+.auth-toggle-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.auth-toggle-btn.active {
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary-light));
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(93, 42, 134, 0.18);
+}
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.auth-field.full {
+  grid-column: 1 / -1;
+}
+
+.auth-field label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-submit {
+  width: auto;
+  min-width: 180px;
+}
+
+.auth-helper {
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(93, 42, 134, 0.08);
+  background: rgba(93, 42, 134, 0.06);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.auth-user-card {
+  padding: 16px 18px;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(93, 42, 134, 0.1);
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .card {
@@ -689,6 +837,22 @@ nav {
   font-weight: 900;
 }
 
+.booking-identity {
+  margin-top: 0;
+}
+
+.booking-identity.locked {
+  border-style: dashed;
+  background: linear-gradient(135deg, rgba(93, 42, 134, 0.05), rgba(245, 160, 137, 0.08));
+}
+
+.identity-copy strong {
+  display: block;
+  color: var(--primary-dark);
+  font-size: 15px;
+  font-weight: 900;
+}
+
 .clear-btn {
   width: 34px;
   height: 34px;
@@ -832,6 +996,22 @@ nav {
   border: 1px solid rgba(93, 42, 134, 0.1);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 252, 255, 0.88) 100%);
   box-shadow: var(--shadow-sm);
+}
+
+.requests-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.inline-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
 .request-card.pending {
@@ -1056,8 +1236,18 @@ nav {
     width: 100%;
   }
 
+  .nav-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .nav-tab {
     flex: 1 1 0;
+  }
+
+  .nav-session {
+    justify-content: space-between;
   }
 
   .page {
@@ -1076,6 +1266,19 @@ nav {
 
   .time-row {
     grid-template-columns: 1fr;
+  }
+
+  .auth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auth-submit {
+    width: 100%;
   }
 
   .req-header {
@@ -1113,9 +1316,20 @@ nav {
 
   .chip,
   .admin-tab,
-  .btn-sm {
+  .btn-sm,
+  .auth-toggle-btn {
     width: 100%;
     text-align: center;
+  }
+
+  .auth-toggle {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .role-pill {
+    margin-left: 0;
   }
 
   .modal-actions {

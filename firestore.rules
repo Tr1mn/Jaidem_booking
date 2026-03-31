@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function hallPath(hallId) {
+      return /databases/$(database)/documents/halls/$(hallId);
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && get(userPath(request.auth.uid)).data.role == "admin";
+    }
+
+    function validTimeString(value) {
+      return value is string && value.matches("^([01][0-9]|2[0-3]):[0-5][0-9]$");
+    }
+
+    function validDateKey(value) {
+      return value is string && value.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$");
+    }
+
+    function validUserProfileShape(uid) {
+      return request.resource.data.keys().hasOnly(["uid", "email", "name", "role", "createdAt", "updatedAt"])
+        && request.resource.data.uid == uid
+        && request.resource.data.email is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.role in ["user", "admin"];
+    }
+
+    function validOwnProfileCreate(uid) {
+      return validUserProfileShape(uid)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == "user";
+    }
+
+    function validOwnProfileUpdate(uid) {
+      return validUserProfileShape(uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role;
+    }
+
+    function validHallWrite(hallId) {
+      return request.resource.data.keys().hasOnly(["name", "address", "icon", "createdAt", "updatedAt"])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.address is string
+        && request.resource.data.address.size() <= 140
+        && request.resource.data.icon is string
+        && request.resource.data.icon.size() <= 4;
+    }
+
+    function validBookingRequestCreate(hallId) {
+      return exists(hallPath(hallId))
+        && request.resource.data.keys().hasOnly([
+          "hallId",
+          "hallName",
+          "userId",
+          "userName",
+          "userEmail",
+          "date",
+          "dateKey",
+          "timeStart",
+          "timeEnd",
+          "startMin",
+          "endMin",
+          "desc",
+          "status",
+          "question",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.hallId == hallId
+        && request.resource.data.hallName == get(hallPath(hallId)).data.name
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail == request.auth.token.email
+        && request.resource.data.userName is string
+        && request.resource.data.userName.size() >= 2
+        && request.resource.data.userName.size() <= 80
+        && request.resource.data.date is string
+        && request.resource.data.date.size() <= 40
+        && validDateKey(request.resource.data.dateKey)
+        && validTimeString(request.resource.data.timeStart)
+        && validTimeString(request.resource.data.timeEnd)
+        && request.resource.data.startMin is int
+        && request.resource.data.endMin is int
+        && request.resource.data.startMin >= 540
+        && request.resource.data.endMin <= 1440
+        && request.resource.data.endMin >= request.resource.data.startMin + 30
+        && request.resource.data.desc is string
+        && request.resource.data.desc.size() >= 1
+        && request.resource.data.desc.size() <= 300
+        && request.resource.data.status == "pending"
+        && request.resource.data.question == "";
+    }
+
+    function validBookingRequestAdminUpdate(hallId) {
+      return request.resource.data.keys().hasOnly([
+          "hallId",
+          "hallName",
+          "userId",
+          "userName",
+          "userEmail",
+          "date",
+          "dateKey",
+          "timeStart",
+          "timeEnd",
+          "startMin",
+          "endMin",
+          "desc",
+          "status",
+          "question",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.hallId == resource.data.hallId
+        && request.resource.data.hallName == resource.data.hallName
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userName == resource.data.userName
+        && request.resource.data.userEmail == resource.data.userEmail
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.dateKey == resource.data.dateKey
+        && request.resource.data.timeStart == resource.data.timeStart
+        && request.resource.data.timeEnd == resource.data.timeEnd
+        && request.resource.data.startMin == resource.data.startMin
+        && request.resource.data.endMin == resource.data.endMin
+        && request.resource.data.desc == resource.data.desc
+        && request.resource.data.status in ["pending", "approved", "rejected", "question"]
+        && request.resource.data.question is string
+        && request.resource.data.question.size() <= 500;
+    }
+
+    function validBookingWrite(hallId) {
+      return request.resource.data.keys().hasOnly([
+          "hallId",
+          "date",
+          "start",
+          "end",
+          "userId",
+          "requestId",
+          "createdAt"
+        ])
+        && request.resource.data.hallId == hallId
+        && validDateKey(request.resource.data.date)
+        && request.resource.data.start is int
+        && request.resource.data.end is int
+        && request.resource.data.start >= 540
+        && request.resource.data.end <= 1440
+        && request.resource.data.end >= request.resource.data.start + 30
+        && request.resource.data.userId is string
+        && request.resource.data.requestId is string;
+    }
+
+    match /users/{uid} {
+      allow create: if isSelf(uid) && validOwnProfileCreate(uid);
+      allow read: if isSelf(uid) || isAdmin();
+      allow update: if (isSelf(uid) && validOwnProfileUpdate(uid)) || (isAdmin() && validUserProfileShape(uid));
+      allow delete: if false;
+    }
+
+    match /halls/{hallId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin() && validHallWrite(hallId);
+      allow delete: if false;
+
+      match /bookingRequests/{requestId} {
+        allow create: if signedIn() && validBookingRequestCreate(hallId);
+        allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+        allow update: if isAdmin() && validBookingRequestAdminUpdate(hallId);
+        allow delete: if false;
+      }
+
+      match /bookings/{bookingId} {
+        allow read: if signedIn();
+        allow create: if isAdmin() && validBookingWrite(hallId);
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -1,15 +1,26 @@
 import { initializeApp } from "firebase/app";
 import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile
+} from "firebase/auth";
+import {
   addDoc,
   collection,
   collectionGroup,
   doc,
+  getDoc,
   getDocs,
   initializeFirestore,
   orderBy,
   query,
   serverTimestamp,
-  updateDoc
+  setDoc,
+  updateDoc,
+  where
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -23,32 +34,37 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   useFetchStreams: false
 });
 
-window.db = db;
+const BOOKING_DAY_START = 540;
+const BOOKING_DAY_END = 1440;
+const REQUEST_STATUSES = ["pending", "approved", "rejected", "question"];
 
 const state = {
   selectedHall: null,
   selectedDate: null,
-  selectedPerson: null,
   selectedDesc: "Тренинг",
   currentYear: null,
   currentMonth: null,
   adminFilter: "all",
   questionTargetId: null,
   halls: [],
-  people: [],
   bookings: {},
   adminRequests: [],
+  myRequests: [],
+  currentUser: null,
+  authMode: "login",
+  authPending: false,
   descriptionOptions: ["Тренинг", "Жыйын", "Презентация", "Интервью", "Башка"]
 };
 
-const MONTHS_KY = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
-const DAYS_KY = ["Дш","Шш","Шр","Бш","Жм","Иш","Жк"];
-const SHORT_MONTHS_KY = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
+const MONTHS_KY = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+const DAYS_KY = ["Дш", "Шш", "Шр", "Бш", "Жм", "Иш", "Жк"];
+const SHORT_MONTHS_KY = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
 function formatDateForApi(date) {
   const year = date.getFullYear();
@@ -61,12 +77,21 @@ function formatDateForDisplay(date) {
   return date.toLocaleDateString("ru-RU");
 }
 
+function formatDateTimeForDisplay(value) {
+  const millis = timestampToMillis(value);
+  return millis ? new Date(millis).toLocaleString("ru-RU") : "";
+}
+
 function toMin(timeStr) {
   const [hours, minutes] = timeStr.split(":").map(Number);
   return hours * 60 + minutes;
 }
 
 function minToStr(minutes) {
+  if (minutes === BOOKING_DAY_END) {
+    return "00:00";
+  }
+
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
@@ -77,78 +102,253 @@ function timestampToMillis(value) {
   return 0;
 }
 
-function getSlotsForSelectedHall() {
-  if (!state.selectedHall || !state.selectedDate) return [];
-  const dateKey = formatDateForApi(state.selectedDate);
-  return (state.bookings[state.selectedHall.id] && state.bookings[state.selectedHall.id][dateKey]) || [];
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
 }
 
-async function loadInitialData() {
-  try {
-    const hallsSnap = await getDocs(query(collection(db, "halls"), orderBy("createdAt", "asc")));
-    const peopleSnap = await getDocs(query(collection(db, "people"), orderBy("name", "asc")));
+function sanitizeSingleLine(value, maxLength = 120) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
 
-    // IMPORTANT:
-    // No orderBy here, so Firestore will not demand collection-group indexes for createdAt.
-    const bookingsSnap = await getDocs(collectionGroup(db, "bookings"));
-    const requestsSnap = await getDocs(collectionGroup(db, "bookingRequests"));
+function sanitizeMultiline(value, maxLength = 500) {
+  return String(value ?? "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, maxLength);
+}
+
+function normalizeEmail(value) {
+  return sanitizeSingleLine(value, 254).toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function getInitials(value) {
+  const parts = sanitizeSingleLine(value, 80).split(" ").filter(Boolean);
+
+  if (!parts.length) {
+    return "?";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase() || "")
+    .join("");
+}
+
+function isAdmin() {
+  return state.currentUser?.role === "admin";
+}
+
+function roleLabel(role) {
+  return role === "admin" ? "Администратор" : "Колдонуучу";
+}
+
+function safeStatus(status) {
+  return REQUEST_STATUSES.includes(status) ? status : "pending";
+}
+
+function statusLabel(status) {
+  return {
+    pending: "Каралууда",
+    approved: "Тастыкталган",
+    rejected: "Четке кагылган",
+    question: "Суроо бар"
+  }[safeStatus(status)];
+}
+
+function getRequestMeta(request) {
+  return formatDateTimeForDisplay(request.updatedAt || request.createdAt);
+}
+
+function clearAuthenticatedState() {
+  state.selectedHall = null;
+  state.selectedDate = null;
+  state.questionTargetId = null;
+  state.halls = [];
+  state.bookings = {};
+  state.adminRequests = [];
+  state.myRequests = [];
+  document.getElementById("daySchedule").style.display = "none";
+}
+
+function buildBookingsMap(snapshot) {
+  const bookingsMap = {};
+
+  snapshot.docs.forEach(docSnap => {
+    const booking = { id: docSnap.id, ...docSnap.data() };
+
+    if (!bookingsMap[booking.hallId]) bookingsMap[booking.hallId] = {};
+    if (!bookingsMap[booking.hallId][booking.date]) bookingsMap[booking.hallId][booking.date] = [];
+    bookingsMap[booking.hallId][booking.date].push(booking);
+  });
+
+  Object.keys(bookingsMap).forEach(hallId => {
+    Object.keys(bookingsMap[hallId]).forEach(dateKey => {
+      bookingsMap[hallId][dateKey].sort((a, b) => a.start - b.start);
+    });
+  });
+
+  return bookingsMap;
+}
+
+async function ensureUserProfile(user, preferredName = "") {
+  const userRef = doc(db, "users", user.uid);
+  const existing = await getDoc(userRef);
+  const fallbackName = sanitizeSingleLine(preferredName || user.displayName || user.email?.split("@")[0] || "Колдонуучу", 80);
+ 
+  if (!existing.exists()) {
+    await setDoc(userRef, {
+      uid: user.uid,
+      email: normalizeEmail(user.email || ""),
+      name: fallbackName,
+      role: "user",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    return {
+      uid: user.uid,
+      email: normalizeEmail(user.email || ""),
+      name: fallbackName,
+      role: "user"
+    };
+  }
+
+  const profile = existing.data();
+  const normalizedProfile = {
+    uid: user.uid,
+    email: normalizeEmail(profile.email || user.email || ""),
+    name: sanitizeSingleLine(profile.name || fallbackName, 80) || fallbackName,
+    role: profile.role === "admin" ? "admin" : "user"
+  };
+
+  if (!profile.name && fallbackName) {
+    await updateDoc(userRef, {
+      name: fallbackName,
+      updatedAt: serverTimestamp()
+    });
+  }
+
+  return normalizedProfile;
+}
+
+async function refreshAppData() {
+  if (!state.currentUser) {
+    clearAuthenticatedState();
+    renderHallOptions();
+    renderCalendar();
+    renderBookingIdentity();
+    renderMyRequests();
+    renderAdmin();
+    updatePendingBadge();
+    updateAuthUI();
+    return;
+  }
+
+  try {
+    const tasks = [
+      getDocs(query(collection(db, "halls"), orderBy("createdAt", "asc"))),
+      getDocs(collectionGroup(db, "bookings")),
+      getDocs(query(collectionGroup(db, "bookingRequests"), where("userId", "==", state.currentUser.uid)))
+    ];
+
+    if (isAdmin()) {
+      tasks.push(getDocs(collectionGroup(db, "bookingRequests")));
+    }
+
+    const [hallsSnap, bookingsSnap, myRequestsSnap, adminRequestsSnap] = await Promise.all(tasks);
 
     state.halls = hallsSnap.docs.map(docSnap => ({
       id: docSnap.id,
       ...docSnap.data()
     }));
 
-    state.people = peopleSnap.docs.map(docSnap => ({
-      id: docSnap.id,
-      ...docSnap.data()
-    }));
+    state.bookings = buildBookingsMap(bookingsSnap);
 
-    const bookingsMap = {};
-    bookingsSnap.docs.forEach(docSnap => {
-      const booking = { id: docSnap.id, ...docSnap.data() };
-      if (!bookingsMap[booking.hallId]) bookingsMap[booking.hallId] = {};
-      if (!bookingsMap[booking.hallId][booking.date]) bookingsMap[booking.hallId][booking.date] = [];
-      bookingsMap[booking.hallId][booking.date].push(booking);
-    });
-
-    Object.keys(bookingsMap).forEach(hallId => {
-      Object.keys(bookingsMap[hallId]).forEach(dateKey => {
-        bookingsMap[hallId][dateKey].sort((a, b) => a.start - b.start);
-      });
-    });
-
-    state.bookings = bookingsMap;
-
-    state.adminRequests = requestsSnap.docs
+    state.myRequests = myRequestsSnap.docs
       .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
-      .sort((a, b) => timestampToMillis(b.createdAt) - timestampToMillis(a.createdAt));
+      .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt));
+
+    state.adminRequests = isAdmin() && adminRequestsSnap
+      ? adminRequestsSnap.docs
+        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+        .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt))
+      : [];
+
+    if (state.selectedHall) {
+      state.selectedHall = state.halls.find(hall => hall.id === state.selectedHall.id) || null;
+    }
+
+    if (state.currentYear === null || state.currentMonth === null) {
+      initCalendar();
+    } else {
+      renderCalendar();
+    }
+
+    renderHallOptions();
+    renderBookingIdentity();
+    renderMyRequests();
+    renderAdmin();
+    updatePendingBadge();
+    updateAuthUI();
   } catch (error) {
     console.error("Failed to load Firestore data:", error);
-    showToast("⚠️ Firestore маалымат жүктөлгөн жок");
+    showToast("⚠️ Firebase маалымат жүктөлгөн жок");
   }
 }
 
 function renderHallOptions() {
   const hallGrid = document.getElementById("hallGrid");
 
+  if (!state.currentUser) {
+    hallGrid.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🔐</div>
+        <p>Алгач аккаунтка кириңиз же катталыңыз</p>
+      </div>
+    `;
+    return;
+  }
+
   if (!state.halls.length) {
-    hallGrid.innerHTML = `<div class="empty-state"><div class="icon">🏛</div><p>Залдар азырынча жок</p></div>`;
+    hallGrid.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🏛</div>
+        <p>Залдар азырынча жок</p>
+      </div>
+    `;
     return;
   }
 
   hallGrid.innerHTML = state.halls.map(hall => `
     <button class="hall-btn ${state.selectedHall?.id === hall.id ? "selected" : ""}" onclick="selectHall('${hall.id}')">
-      <div class="hall-icon">${hall.icon || "🏛"}</div>
-      <div class="hall-name">${hall.name}</div>
-      <div class="hall-cap">${hall.address || ""}</div>
+      <div class="hall-icon">${escapeHtml(hall.icon || "🏛")}</div>
+      <div class="hall-name">${escapeHtml(hall.name || "Зал")}</div>
+      <div class="hall-cap">${escapeHtml(hall.address || "")}</div>
     </button>
   `).join("");
 }
 
 function renderDescriptionOptions() {
   const wrap = document.getElementById("descChips");
+
   wrap.innerHTML = state.descriptionOptions.map(option => `
-    <button class="chip ${state.selectedDesc === option ? "selected" : ""}" onclick="selectDesc('${option}')">${option}</button>
+    <button class="chip ${state.selectedDesc === option ? "selected" : ""}" onclick="selectDesc('${option}')">${escapeHtml(option)}</button>
   `).join("");
 }
 
@@ -170,7 +370,7 @@ function getDayColor(day) {
 
   const totalBooked = slots.reduce((sum, slot) => sum + (slot.end - slot.start), 0);
 
-  if (totalBooked >= 840) return "red";
+  if (totalBooked >= (BOOKING_DAY_END - BOOKING_DAY_START)) return "red";
   if (totalBooked > 0) return "yellow";
   return "green";
 }
@@ -188,11 +388,11 @@ function renderCalendar() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  for (let i = 0; i < offset; i++) {
+  for (let i = 0; i < offset; i += 1) {
     grid.innerHTML += `<div class="cal-day empty"></div>`;
   }
 
-  for (let day = 1; day <= daysInMonth; day++) {
+  for (let day = 1; day <= daysInMonth; day += 1) {
     const date = new Date(state.currentYear, state.currentMonth, day);
     const isPast = date < today;
     const color = getDayColor(day);
@@ -238,7 +438,7 @@ function renderDaySchedule(day) {
   const titleEl = document.getElementById("dayScheduleTitle");
   const timeline = document.getElementById("dayTimeline");
 
-  if (!state.selectedHall) {
+  if (!state.selectedHall || !day) {
     panel.style.display = "none";
     return;
   }
@@ -254,10 +454,8 @@ function renderDaySchedule(day) {
     return;
   }
 
-  const DAY_START = 540;
-  const DAY_END = 1440;
   const segments = [];
-  let cursor = DAY_START;
+  let cursor = BOOKING_DAY_START;
 
   for (const slot of slots) {
     if (cursor < slot.start) {
@@ -267,46 +465,27 @@ function renderDaySchedule(day) {
     segments.push({
       type: "busy",
       start: slot.start,
-      end: slot.end,
-      bookedBy: slot.bookedBy,
-      role: slot.role
+      end: slot.end
     });
 
     cursor = Math.max(cursor, slot.end);
   }
 
-  if (cursor < DAY_END) {
-    segments.push({ type: "free", start: cursor, end: DAY_END });
+  if (cursor < BOOKING_DAY_END) {
+    segments.push({ type: "free", start: cursor, end: BOOKING_DAY_END });
   }
 
   titleEl.textContent = `📅 ${day} ${SHORT_MONTHS_KY[state.currentMonth]} күнүнүн графиги`;
 
   timeline.innerHTML = segments.map(segment => {
-    const endLabel = segment.end === 1440 ? "00:00" : minToStr(segment.end);
-
     if (segment.type === "busy") {
-      const initials = (segment.bookedBy || "?")
-        .split(" ")
-        .map(word => word[0])
-        .join("")
-        .slice(0, 2);
-
       return `
-        <div class="timeline-row busy" style="align-items:center;justify-content:space-between;">
+        <div class="timeline-row busy">
           <div style="display:flex;align-items:center;gap:8px;">
             <div class="timeline-dot"></div>
-            <div>
-              <div class="timeline-time" style="color:var(--red);">🔴 ${minToStr(segment.start)} – ${endLabel}</div>
-              <div style="font-size:11px;color:var(--red);opacity:0.8;margin-top:2px;">Ээленген</div>
-            </div>
+            <div class="timeline-time" style="color:var(--red);">🔴 ${minToStr(segment.start)} – ${minToStr(segment.end)}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:7px;background:rgba(255,71,87,0.12);border-radius:10px;padding:5px 10px;">
-            <div style="width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;flex-shrink:0;">${initials}</div>
-            <div>
-              <div style="font-size:12px;font-weight:800;color:var(--red);">${segment.bookedBy || "—"}</div>
-              <div style="font-size:10px;color:var(--red);opacity:0.75;">${segment.role || ""}</div>
-            </div>
-          </div>
+          <div class="timeline-label" style="color:var(--red);">Брондолгон</div>
         </div>
       `;
     }
@@ -314,7 +493,7 @@ function renderDaySchedule(day) {
     return `
       <div class="timeline-row free">
         <div class="timeline-dot"></div>
-        <div class="timeline-time">🟢 ${minToStr(segment.start)} – ${endLabel}</div>
+        <div class="timeline-time">🟢 ${minToStr(segment.start)} – ${minToStr(segment.end)}</div>
         <div class="timeline-label">Бош</div>
       </div>
     `;
@@ -345,7 +524,7 @@ function validateTime() {
   const startMin = toMin(startValue);
   const endMin = toMin(endValue);
 
-  if (startMin < 540) {
+  if (startMin < BOOKING_DAY_START) {
     errorEl.textContent = "⛔ Брондоо 09:00дан башталат";
     return false;
   }
@@ -355,7 +534,7 @@ function validateTime() {
     return false;
   }
 
-  if (endMin > 1440) {
+  if (endMin > BOOKING_DAY_END) {
     errorEl.textContent = "⛔ Максималдуу аяктоо убактысы — 00:00";
     return false;
   }
@@ -385,166 +564,168 @@ function selectHall(hallId) {
   validateTime();
 }
 
-function normalizeSearchText(value) {
-  return (value || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+function setAuthMode(mode) {
+  state.authMode = mode === "register" ? "register" : "login";
+  updateAuthUI();
 }
 
-function transliterateCyrillicToLatin(value) {
-  const map = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "g",
-    д: "d",
-    е: "e",
-    ё: "yo",
-    ж: "zh",
-    з: "z",
-    и: "i",
-    й: "i",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    ң: "ng",
-    о: "o",
-    ө: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ү: "u",
-    ф: "f",
-    х: "h",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "sh",
-    ъ: "",
-    ы: "y",
-    ь: "",
-    э: "e",
-    ю: "yu",
-    я: "ya"
-  };
+function updateAuthUI() {
+  const currentUser = state.currentUser;
+  const guestPanel = document.getElementById("authGuestPanel");
+  const profilePanel = document.getElementById("authProfilePanel");
+  const nameField = document.getElementById("authNameField");
+  const submitBtn = document.getElementById("authSubmitBtn");
+  const helperText = document.getElementById("authHelperText");
+  const bookingSubmitBtn = document.getElementById("submitBtn");
+  const navSessionLabel = document.getElementById("navSessionLabel");
+  const navLogoutBtn = document.getElementById("navLogoutBtn");
+  const adminNavBtn = document.getElementById("adminNavBtn");
+  const loginModeBtn = document.getElementById("authModeLogin");
+  const registerModeBtn = document.getElementById("authModeRegister");
 
-  return normalizeSearchText(value)
-    .split("")
-    .map(char => map[char] ?? char)
-    .join("");
-}
+  const isLoggedIn = Boolean(currentUser);
+  const adminAccess = isAdmin();
 
-function getPersonSearchTokens(person) {
-  const fields = [
-    person.name || "",
-    person.role || "",
-    person.initials || ""
-  ];
+  guestPanel.style.display = isLoggedIn ? "none" : "block";
+  profilePanel.style.display = isLoggedIn ? "block" : "none";
+  nameField.style.display = state.authMode === "register" ? "block" : "none";
 
-  return fields.flatMap(field => {
-    const normalized = normalizeSearchText(field);
-    const transliterated = transliterateCyrillicToLatin(field);
-    return [normalized, transliterated].filter(Boolean);
-  });
-}
+  loginModeBtn.classList.toggle("active", state.authMode === "login");
+  registerModeBtn.classList.toggle("active", state.authMode === "register");
 
-function searchPerson(queryText) {
-  const dropdown = document.getElementById("personDropdown");
-  const query = normalizeSearchText(queryText);
+  submitBtn.disabled = state.authPending;
+  submitBtn.textContent = state.authPending
+    ? (state.authMode === "login" ? "Кирүү..." : "Катталуу...")
+    : (state.authMode === "login" ? "Кирүү" : "Катталуу");
 
-  if (!query) {
-    dropdown.style.display = "none";
-    return;
+  helperText.textContent = state.authMode === "login"
+    ? "Колдонуучу катары кириңиз. Админ мүмкүнчүлүк Firebase'деги role=admin менен берилет."
+    : "Жаңы аккаунттар коопсуздук үчүн кадимки user ролу менен түзүлөт.";
+
+  bookingSubmitBtn.disabled = !isLoggedIn;
+  bookingSubmitBtn.textContent = isLoggedIn ? "Арызды жөнөтүү →" : "Алгач кириңиз же катталыңыз";
+
+  navSessionLabel.textContent = isLoggedIn
+    ? `${currentUser.name} · ${roleLabel(currentUser.role)}`
+    : "Конок";
+  navLogoutBtn.style.display = isLoggedIn ? "inline-flex" : "none";
+
+  adminNavBtn.disabled = !adminAccess;
+  adminNavBtn.classList.toggle("locked", !adminAccess);
+  adminNavBtn.textContent = adminAccess ? "🛡 Администратор" : "🔒 Администратор";
+
+  if (isLoggedIn) {
+    document.getElementById("authUserAvatar").textContent = getInitials(currentUser.name);
+    document.getElementById("authUserName").textContent = currentUser.name;
+    document.getElementById("authUserMeta").textContent = currentUser.email;
+    document.getElementById("authUserRole").textContent = roleLabel(currentUser.role);
   }
 
-  if (!state.people.length) {
-    dropdown.innerHTML = `
-      <div class="dropdown-empty">
-        Адамдардын тизмеси жүктөлгөн жок же азырынча бош.
+  if (!adminAccess && document.getElementById("page-admin").classList.contains("active")) {
+    showPage("booking", document.getElementById("bookingNavBtn"));
+  }
+}
+
+function renderBookingIdentity() {
+  const container = document.getElementById("bookingIdentity");
+
+  if (!state.currentUser) {
+    container.classList.add("locked");
+    container.innerHTML = `
+      <div class="avatar">🔐</div>
+      <div class="identity-copy">
+        <strong>Алгач аккаунтка кириңиз</strong>
+        <div class="person-role">Катталган колдонуучулар гана брондоо арызын бере алышат.</div>
       </div>
     `;
-    dropdown.style.display = "block";
     return;
   }
 
-  const queryVariants = [
-    query,
-    transliterateCyrillicToLatin(query)
-  ].filter(Boolean);
-
-  const results = state.people.filter(person =>
-    getPersonSearchTokens(person).some(token =>
-      queryVariants.some(queryVariant => token.includes(queryVariant))
-    )
-  );
-
-  if (!results.length) {
-    dropdown.innerHTML = `
-      <div class="dropdown-empty">
-        Суроо боюнча адам табылган жок.
-      </div>
-    `;
-    dropdown.style.display = "block";
-    return;
-  }
-
-  dropdown.innerHTML = results.map(person => `
-    <div class="dropdown-item" onclick="choosePerson('${person.id}')">
-      <div class="avatar">${person.initials || "?"}</div>
-      <div>
-        <div style="font-weight:700">${person.name}</div>
-        <div class="person-role">${person.role || ""}</div>
-      </div>
+  container.classList.remove("locked");
+  container.innerHTML = `
+    <div class="avatar">${escapeHtml(getInitials(state.currentUser.name))}</div>
+    <div>
+      <div class="name">${escapeHtml(state.currentUser.name)}</div>
+      <div class="person-role">${escapeHtml(state.currentUser.email)}</div>
     </div>
-  `).join("");
-
-  dropdown.style.display = "block";
+    <span class="role-pill">${escapeHtml(roleLabel(state.currentUser.role))}</span>
+  `;
 }
 
-function choosePerson(id) {
-  const person = state.people.find(item => item.id === id);
-  if (!person) return;
+function renderMyRequests() {
+  const list = document.getElementById("myRequestsList");
 
-  state.selectedPerson = person;
-  document.getElementById("personSearch").value = "";
-  document.getElementById("personDropdown").style.display = "none";
-  document.getElementById("selectedAvatar").textContent = person.initials || "?";
-  document.getElementById("selectedName").textContent = person.name;
-  document.getElementById("selectedRole").textContent = person.role || "";
-  document.getElementById("selectedPersonEl").style.display = "flex";
-}
-
-function clearPerson() {
-  state.selectedPerson = null;
-  document.getElementById("selectedPersonEl").style.display = "none";
-}
-
-document.addEventListener("click", event => {
-  if (!event.target.closest(".search-wrap")) {
-    document.getElementById("personDropdown").style.display = "none";
+  if (!state.currentUser) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📝</div>
+        <p>Киргенден кийин өз арыздарыңызды бул жерден көрөсүз</p>
+      </div>
+    `;
+    return;
   }
-});
 
-function selectDesc(value) {
-  state.selectedDesc = value;
+  if (!state.myRequests.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📭</div>
+        <p>Азырынча сиздин арыздарыңыз жок</p>
+      </div>
+    `;
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="requests-stack">
+      ${state.myRequests.map(request => {
+        const requestStatus = safeStatus(request.status);
+        const questionBlock = request.question
+          ? `<div class="inline-note">💬 ${escapeHtml(request.question)}</div>`
+          : "";
+
+        return `
+          <div class="request-card ${requestStatus}">
+            <div class="req-header">
+              <div>
+                <div class="req-title">${escapeHtml(request.hallName || "Зал")}</div>
+                <div class="req-meta">${escapeHtml(getRequestMeta(request))}</div>
+              </div>
+              <span class="status-badge ${requestStatus}">${escapeHtml(statusLabel(requestStatus))}</span>
+            </div>
+            <div class="req-details">
+              <div class="req-detail">📅 ${escapeHtml(request.date || "")}</div>
+              <div class="req-detail">🕐 ${escapeHtml(request.timeStart || "")} – ${escapeHtml(request.timeEnd || "")}</div>
+              <div class="req-detail">🎯 ${escapeHtml(request.desc || "")}</div>
+            </div>
+            ${questionBlock}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function resetBookingForm() {
+  state.selectedHall = null;
+  state.selectedDate = null;
+  state.selectedDesc = "Тренинг";
+  document.getElementById("timeStart").value = "09:00";
+  document.getElementById("timeEnd").value = "10:00";
+  document.getElementById("descTextarea").value = "";
+  document.getElementById("descTextarea").classList.remove("visible");
+  document.getElementById("daySchedule").style.display = "none";
+  renderHallOptions();
   renderDescriptionOptions();
-
-  const textarea = document.getElementById("descTextarea");
-  if (value === "Башка") {
-    textarea.classList.add("visible");
-  } else {
-    textarea.classList.remove("visible");
-    textarea.value = "";
-  }
+  renderCalendar();
+  renderBookingIdentity();
 }
 
 async function submitBooking() {
+  if (!state.currentUser) {
+    showToast("❗ Алгач кириңиз же катталыңыз");
+    return;
+  }
+
   if (!state.selectedHall) {
     showToast("❗ Залды тандаңыз");
     return;
@@ -560,14 +741,14 @@ async function submitBooking() {
     return;
   }
 
-  if (!state.selectedPerson) {
-    showToast("❗ Арыз берүүчүнү тандаңыз");
+  const description = state.selectedDesc === "Башка"
+    ? sanitizeMultiline(document.getElementById("descTextarea").value, 300)
+    : sanitizeSingleLine(state.selectedDesc, 80);
+
+  if (state.selectedDesc === "Башка" && !description) {
+    showToast("❗ Брондоонун максатын жазыңыз");
     return;
   }
-
-  const description = state.selectedDesc === "Башка"
-    ? (document.getElementById("descTextarea").value.trim() || "Башка")
-    : state.selectedDesc;
 
   const timeStart = document.getElementById("timeStart").value;
   const timeEnd = document.getElementById("timeEnd").value;
@@ -576,35 +757,24 @@ async function submitBooking() {
   try {
     await addDoc(collection(db, "halls", state.selectedHall.id, "bookingRequests"), {
       hallId: state.selectedHall.id,
-      hallName: state.selectedHall.name,
-      personId: state.selectedPerson.id,
-      personName: state.selectedPerson.name,
-      personRole: state.selectedPerson.role || "",
+      hallName: sanitizeSingleLine(state.selectedHall.name, 120),
+      userId: state.currentUser.uid,
+      userName: sanitizeSingleLine(state.currentUser.name, 80),
+      userEmail: normalizeEmail(state.currentUser.email),
       date: formatDateForDisplay(state.selectedDate),
       dateKey,
       timeStart,
       timeEnd,
-      desc: description,
+      startMin: toMin(timeStart),
+      endMin: toMin(timeEnd),
+      desc: description || "Башка",
       status: "pending",
       question: "",
-      created: new Date().toLocaleString("ru-RU"),
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
 
-    await addDoc(collection(db, "halls", state.selectedHall.id, "bookings"), {
-      hallId: state.selectedHall.id,
-      hallName: state.selectedHall.name,
-      date: dateKey,
-      start: toMin(timeStart),
-      end: toMin(timeEnd),
-      bookedBy: state.selectedPerson.name,
-      role: state.selectedPerson.role || "",
-      createdAt: serverTimestamp()
-    });
-
-    await loadInitialData();
-    renderCalendar();
-    updatePendingBadge();
+    await refreshAppData();
 
     document.getElementById("successBanner").classList.add("show");
     document.getElementById("submitBtn").disabled = true;
@@ -612,114 +782,167 @@ async function submitBooking() {
 
     setTimeout(() => {
       document.getElementById("successBanner").classList.remove("show");
-      document.getElementById("submitBtn").disabled = false;
+      document.getElementById("submitBtn").disabled = !state.currentUser;
       resetBookingForm();
     }, 2500);
   } catch (error) {
     console.error("Failed to create booking request:", error);
     showToast("⚠️ Арыз жөнөтүлгөн жок");
   }
-  console.log("successfully")
-}
-
-function resetBookingForm() {
-  state.selectedHall = null;
-  state.selectedDate = null;
-  state.selectedPerson = null;
-  state.selectedDesc = "Тренинг";
-
-  document.getElementById("timeStart").value = "09:00";
-  document.getElementById("timeEnd").value = "10:00";
-  document.getElementById("descTextarea").value = "";
-  document.getElementById("descTextarea").classList.remove("visible");
-  document.getElementById("daySchedule").style.display = "none";
-
-  clearPerson();
-  renderHallOptions();
-  renderDescriptionOptions();
-  initCalendar();
 }
 
 function filterAdmin(filter, button) {
   state.adminFilter = filter;
   document.querySelectorAll(".admin-tab").forEach(tab => tab.classList.remove("active"));
-  button.classList.add("active");
+
+  if (button) {
+    button.classList.add("active");
+  }
+
   renderAdmin();
 }
 
 function renderAdmin() {
   const list = document.getElementById("adminList");
 
+  if (!isAdmin()) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🔒</div>
+        <p>Бул бөлүм администраторлор үчүн гана жеткиликтүү</p>
+      </div>
+    `;
+    return;
+  }
+
   const filtered = state.adminFilter === "all"
     ? state.adminRequests
     : state.adminRequests.filter(request => request.status === state.adminFilter);
 
   if (!filtered.length) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>Арыздар жок</p></div>`;
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📭</div>
+        <p>Арыздар жок</p>
+      </div>
+    `;
     return;
   }
 
-  const statusLabel = {
-    pending: "Каралууда",
-    approved: "Тастыкталган",
-    rejected: "Четке кагылган",
-    question: "Суроо бар"
-  };
+  list.innerHTML = filtered.map(request => {
+    const requestStatus = safeStatus(request.status);
+    const questionBlock = request.question
+      ? `<div class="inline-note">💬 ${escapeHtml(request.question)}</div>`
+      : "";
 
-  list.innerHTML = filtered.map(request => `
-    <div class="request-card ${request.status}" id="req-${request.id}">
-      <div class="req-header">
-        <div>
-          <div class="req-title">${request.hallName || ""}</div>
-          <div class="req-meta">Берген: ${request.personName || ""} · ${request.personRole || ""} · ${request.created || ""}</div>
+    return `
+      <div class="request-card ${requestStatus}" id="req-${request.id}">
+        <div class="req-header">
+          <div>
+            <div class="req-title">${escapeHtml(request.hallName || "")}</div>
+            <div class="req-meta">
+              Берген: ${escapeHtml(request.userName || "")} · ${escapeHtml(request.userEmail || "")} · ${escapeHtml(getRequestMeta(request))}
+            </div>
+          </div>
+          <span class="status-badge ${requestStatus}">${escapeHtml(statusLabel(requestStatus))}</span>
         </div>
-        <span class="status-badge ${request.status}">${statusLabel[request.status] || request.status}</span>
-      </div>
 
-      <div class="req-details">
-        <div class="req-detail">📅 ${request.date}</div>
-        <div class="req-detail">🕐 ${request.timeStart} – ${request.timeEnd}</div>
-        <div class="req-detail">🎯 ${request.desc}</div>
-      </div>
-
-      ${request.question ? `<div style="background:var(--primary-soft);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;color:var(--primary);margin-bottom:12px">💬 Суроо жөнөтүлдү: «${request.question}»</div>` : ""}
-
-      ${(request.status === "pending" || request.status === "question") ? `
-        <div class="req-actions">
-          <button class="btn-sm btn-approve" onclick="setStatus('${request.id}', 'approved')">✅ Тастыктоо</button>
-          <button class="btn-sm btn-reject" onclick="setStatus('${request.id}', 'rejected')">❌ Четке кагуу</button>
-          <button class="btn-sm btn-question" onclick="openModal('${request.id}')">💬 Суроо берүү</button>
+        <div class="req-details">
+          <div class="req-detail">📅 ${escapeHtml(request.date || "")}</div>
+          <div class="req-detail">🕐 ${escapeHtml(request.timeStart || "")} – ${escapeHtml(request.timeEnd || "")}</div>
+          <div class="req-detail">🎯 ${escapeHtml(request.desc || "")}</div>
         </div>
-      ` : ""}
-    </div>
-  `).join("");
+
+        ${questionBlock}
+
+        ${(requestStatus === "pending" || requestStatus === "question") ? `
+          <div class="req-actions">
+            <button class="btn-sm btn-approve" onclick="setStatus('${request.id}', 'approved')">✅ Тастыктоо</button>
+            <button class="btn-sm btn-reject" onclick="setStatus('${request.id}', 'rejected')">❌ Четке кагуу</button>
+            <button class="btn-sm btn-question" onclick="openModal('${request.id}')">💬 Суроо берүү</button>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+async function approveRequest(request) {
+  const bookingsRef = collection(db, "halls", request.hallId, "bookings");
+  const startMin = Number(request.startMin ?? toMin(request.timeStart));
+  const endMin = Number(request.endMin ?? toMin(request.timeEnd));
+
+  const dayBookingsSnap = await getDocs(query(bookingsRef, where("date", "==", request.dateKey)));
+  const hasConflict = dayBookingsSnap.docs.some(docSnap => {
+    const booking = docSnap.data();
+    return startMin < booking.end && endMin > booking.start;
+  });
+
+  if (hasConflict) {
+    throw new Error("Бул убакыт аралыгы эми бош эмес.");
+  }
+
+  await addDoc(bookingsRef, {
+    hallId: request.hallId,
+    date: request.dateKey,
+    start: startMin,
+    end: endMin,
+    userId: request.userId,
+    requestId: request.id,
+    createdAt: serverTimestamp()
+  });
+
+  await updateDoc(
+    doc(db, "halls", request.hallId, "bookingRequests", request.id),
+    {
+      status: "approved",
+      updatedAt: serverTimestamp()
+    }
+  );
 }
 
 async function setStatus(id, status) {
+  if (!isAdmin()) {
+    showToast("⚠️ Бул аракет админ үчүн гана");
+    return;
+  }
+
+  const request = state.adminRequests.find(item => item.id === id);
+
+  if (!request) {
+    showToast("⚠️ Арыз табылган жок");
+    return;
+  }
+
   try {
-    const request = state.adminRequests.find(item => item.id === id);
-    if (!request) {
-      showToast("⚠️ Арыз табылган жок");
-      return;
+    if (status === "approved") {
+      await approveRequest(request);
+      showToast("✅ Арыз тастыкталды");
+    } else {
+      await updateDoc(
+        doc(db, "halls", request.hallId, "bookingRequests", id),
+        {
+          status: "rejected",
+          updatedAt: serverTimestamp()
+        }
+      );
+      showToast("❌ Арыз четке кагылды");
     }
 
-    await updateDoc(
-      doc(db, "halls", request.hallId, "bookingRequests", id),
-      { status }
-    );
-
-    await loadInitialData();
-    updatePendingBadge();
-    renderAdmin();
-
-    showToast(status === "approved" ? "✅ Арыз тастыкталды" : "❌ Арыз четке кагылды");
+    await refreshAppData();
+    renderDaySchedule(state.selectedDate?.getDate() || 0);
   } catch (error) {
     console.error("Failed to update status:", error);
-    showToast("⚠️ Статус жаңыртылган жок");
+    showToast(error.message || "⚠️ Статус жаңыртылган жок");
   }
 }
 
 function openModal(id) {
+  if (!isAdmin()) {
+    showToast("⚠️ Бул аракет админ үчүн гана");
+    return;
+  }
+
   state.questionTargetId = id;
   document.getElementById("modalQuestion").value = "";
   document.getElementById("modalOverlay").classList.add("open");
@@ -731,7 +954,7 @@ function closeModal() {
 }
 
 async function sendQuestion() {
-  const question = document.getElementById("modalQuestion").value.trim();
+  const question = sanitizeMultiline(document.getElementById("modalQuestion").value, 500);
 
   if (!question) {
     showToast("❗ Суроону жазыңыз");
@@ -740,6 +963,7 @@ async function sendQuestion() {
 
   try {
     const request = state.adminRequests.find(item => item.id === state.questionTargetId);
+
     if (!request) {
       showToast("⚠️ Арыз табылган жок");
       return;
@@ -749,15 +973,14 @@ async function sendQuestion() {
       doc(db, "halls", request.hallId, "bookingRequests", state.questionTargetId),
       {
         question,
-        status: "question"
+        status: "question",
+        updatedAt: serverTimestamp()
       }
     );
 
     closeModal();
-    await loadInitialData();
-    updatePendingBadge();
-    renderAdmin();
-    showToast("💬 Суроо арыз берүүчүгө жөнөтүлдү");
+    await refreshAppData();
+    showToast("💬 Суроо жөнөтүлдү");
   } catch (error) {
     console.error("Failed to send question:", error);
     showToast("⚠️ Суроо жөнөтүлгөн жок");
@@ -765,6 +988,11 @@ async function sendQuestion() {
 }
 
 function openPlaceModal() {
+  if (!isAdmin()) {
+    showToast("⚠️ Бул аракет админ үчүн гана");
+    return;
+  }
+
   document.getElementById("placeName").value = "";
   document.getElementById("placeAddress").value = "";
   document.getElementById("placeIcon").value = "";
@@ -775,10 +1003,15 @@ function closePlaceModal() {
   document.getElementById("placeModalOverlay").classList.remove("open");
 }
 
-window.createPlace = async function () {
-  const name = document.getElementById("placeName").value.trim();
-  const address = document.getElementById("placeAddress").value.trim();
-  const icon = document.getElementById("placeIcon").value.trim() || "🏛";
+async function createPlace() {
+  if (!isAdmin()) {
+    showToast("⚠️ Бул аракет админ үчүн гана");
+    return;
+  }
+
+  const name = sanitizeSingleLine(document.getElementById("placeName").value, 80);
+  const address = sanitizeSingleLine(document.getElementById("placeAddress").value, 140);
+  const icon = sanitizeSingleLine(document.getElementById("placeIcon").value, 4) || "🏛";
 
   if (!name) {
     showToast("❗ Залдын атын жазыңыз");
@@ -786,36 +1019,43 @@ window.createPlace = async function () {
   }
 
   try {
-    const docRef = await addDoc(collection(db, "halls"), {
+    await addDoc(collection(db, "halls"), {
       name,
       address,
       icon,
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
 
-    console.log("saved Firestore, id:", docRef.id);
-
     closePlaceModal();
-    await loadInitialData();
-    renderHallOptions();
-    showToast("✅ Saved");
+    await refreshAppData();
+    showToast("✅ Зал кошулду");
   } catch (error) {
-    console.error("ADDDOC ERROR:", error);
-    alert(error.message);
+    console.error("Failed to create hall:", error);
+    showToast("⚠️ Зал сакталган жок");
   }
-};
+}
 
 function updatePendingBadge() {
   document.getElementById("pendingBadge").textContent =
-    state.adminRequests.filter(item => item.status === "pending").length;
+    isAdmin()
+      ? state.adminRequests.filter(item => item.status === "pending").length
+      : 0;
 }
 
 function showPage(page, button) {
+  if (page === "admin" && !isAdmin()) {
+    showToast("🔒 Админ панель үчүн admin аккаунт керек");
+    return;
+  }
+
   document.querySelectorAll(".page").forEach(element => element.classList.remove("active"));
   document.getElementById(`page-${page}`).classList.add("active");
 
   document.querySelectorAll(".nav-tab").forEach(tab => tab.classList.remove("active"));
-  button.classList.add("active");
+  if (button) {
+    button.classList.add("active");
+  }
 
   if (page === "admin") {
     renderAdmin();
@@ -829,12 +1069,100 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove("show"), 2800);
 }
 
+function selectDesc(value) {
+  state.selectedDesc = value;
+  renderDescriptionOptions();
+
+  const textarea = document.getElementById("descTextarea");
+  if (value === "Башка") {
+    textarea.classList.add("visible");
+  } else {
+    textarea.classList.remove("visible");
+    textarea.value = "";
+  }
+}
+
+function getAuthErrorMessage(error) {
+  switch (error?.code) {
+    case "auth/email-already-in-use":
+      return "Бул email менен аккаунт мурунтан бар.";
+    case "auth/invalid-email":
+      return "Email туура эмес жазылган.";
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Email же сырсөз туура эмес.";
+    case "auth/weak-password":
+      return "Сырсөз өтө алсыз. Кеминде 8 белги жазыңыз.";
+    case "auth/too-many-requests":
+      return "Сураныч, бир аздан кийин кайра аракет кылыңыз.";
+    default:
+      return "Аутентификация аткарылган жок.";
+  }
+}
+
+async function submitAuth() {
+  const email = normalizeEmail(document.getElementById("authEmail").value);
+  const password = document.getElementById("authPassword").value;
+  const name = sanitizeSingleLine(document.getElementById("authName").value, 80);
+
+  if (!isValidEmail(email)) {
+    showToast("❗ Туура email жазыңыз");
+    return;
+  }
+
+  if (password.length < 8) {
+    showToast("❗ Сырсөз кеминде 8 белгиден турушу керек");
+    return;
+  }
+
+  if (state.authMode === "register" && name.length < 2) {
+    showToast("❗ Аты-жөнүңүздү жазыңыз");
+    return;
+  }
+
+  state.authPending = true;
+  updateAuthUI();
+
+  try {
+    if (state.authMode === "register") {
+      const credentials = await createUserWithEmailAndPassword(auth, email, password);
+
+      await updateProfile(credentials.user, { displayName: name });
+      state.currentUser = await ensureUserProfile(credentials.user, name);
+      await refreshAppData();
+      showToast("✅ Аккаунт түзүлдү");
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+      showToast("✅ Ийгиликтүү кирдиңиз");
+    }
+
+    document.getElementById("authPassword").value = "";
+    if (state.authMode === "register") {
+      document.getElementById("authName").value = "";
+    }
+  } catch (error) {
+    console.error("Auth action failed:", error);
+    showToast(`⚠️ ${getAuthErrorMessage(error)}`);
+  } finally {
+    state.authPending = false;
+    updateAuthUI();
+  }
+}
+
+async function logoutUser() {
+  try {
+    await signOut(auth);
+    showToast("👋 Аккаунттан чыктыңыз");
+  } catch (error) {
+    console.error("Logout failed:", error);
+    showToast("⚠️ Чыгуу мүмкүн болгон жок");
+  }
+}
+
 window.changeMonth = changeMonth;
 window.selectDay = selectDay;
 window.selectHall = selectHall;
-window.searchPerson = searchPerson;
-window.choosePerson = choosePerson;
-window.clearPerson = clearPerson;
 window.selectDesc = selectDesc;
 window.submitBooking = submitBooking;
 window.filterAdmin = filterAdmin;
@@ -844,15 +1172,63 @@ window.closeModal = closeModal;
 window.sendQuestion = sendQuestion;
 window.openPlaceModal = openPlaceModal;
 window.closePlaceModal = closePlaceModal;
+window.createPlace = createPlace;
 window.showPage = showPage;
 window.validateTime = validateTime;
+window.submitAuth = submitAuth;
+window.setAuthMode = setAuthMode;
+window.logoutUser = logoutUser;
+
+function attachAuthInputHandlers() {
+  ["authName", "authEmail", "authPassword"].forEach(id => {
+    const element = document.getElementById(id);
+
+    element.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitAuth();
+      }
+    });
+  });
+}
 
 async function bootstrap() {
-  await loadInitialData();
-  renderHallOptions();
   renderDescriptionOptions();
   initCalendar();
+  renderHallOptions();
+  renderBookingIdentity();
+  renderMyRequests();
+  renderAdmin();
   updatePendingBadge();
+  updateAuthUI();
+  attachAuthInputHandlers();
+
+  onAuthStateChanged(auth, async user => {
+    state.authPending = false;
+
+    if (!user) {
+      state.currentUser = null;
+      clearAuthenticatedState();
+      renderHallOptions();
+      renderCalendar();
+      renderBookingIdentity();
+      renderMyRequests();
+      renderAdmin();
+      updatePendingBadge();
+      updateAuthUI();
+      return;
+    }
+
+    try {
+      state.currentUser = await ensureUserProfile(user);
+      await refreshAppData();
+    } catch (error) {
+      console.error("Failed to sync auth state:", error);
+      showToast("⚠️ Колдонуучу профили даярдалган жок");
+    } finally {
+      updateAuthUI();
+    }
+  });
 }
 
 bootstrap();

@@ -17,9 +17,15 @@
       <span>booking</span>
     </div>
   </div>
-  <div class="nav-tabs">
-    <button class="nav-tab active" onclick="showPage('booking', this)">📅 Брондоо</button>
-    <button class="nav-tab" onclick="showPage('admin', this)">🛡 Администратор</button>
+  <div class="nav-actions">
+    <div class="nav-tabs">
+      <button id="bookingNavBtn" class="nav-tab active" data-page="booking" onclick="showPage('booking', this)">📅 Брондоо</button>
+      <button id="adminNavBtn" class="nav-tab" data-page="admin" onclick="showPage('admin', this)">🔒 Администратор</button>
+    </div>
+    <div class="nav-session">
+      <span id="navSessionLabel">Конок</span>
+      <button id="navLogoutBtn" class="nav-ghost-btn" onclick="logoutUser()" style="display:none">Чыгуу</button>
+    </div>
   </div>
 </nav>
 
@@ -29,6 +35,59 @@
       <div class="page-kicker">Jaidem booking</div>
       <h1>Зал брондоо</h1>
       <p>Арызды берүү үчүн формага толтуруңуз</p>
+    </div>
+
+    <div class="card">
+      <div class="step-label">Аккаунт</div>
+      <div class="auth-shell">
+        <div class="auth-panel" id="authGuestPanel">
+          <div class="auth-copy">
+            <h2>Кирүү же катталуу</h2>
+            <p>Брондоо үчүн аккаунт керек. Катталган колдонуучулар гана арыз бере алышат, администраторлор болсо арыздарды башкарат.</p>
+          </div>
+
+          <div class="auth-toggle">
+            <button id="authModeLogin" class="auth-toggle-btn active" onclick="setAuthMode('login')">Кирүү</button>
+            <button id="authModeRegister" class="auth-toggle-btn" onclick="setAuthMode('register')">Катталуу</button>
+          </div>
+
+          <div class="auth-grid">
+            <div class="auth-field full" id="authNameField" style="display:none">
+              <label for="authName">Аты-жөнү</label>
+              <input id="authName" type="text" maxlength="80" placeholder="Мисалы: Aida Asanbekova" autocomplete="name">
+            </div>
+
+            <div class="auth-field">
+              <label for="authEmail">Email</label>
+              <input id="authEmail" type="email" maxlength="254" placeholder="name@example.com" autocomplete="email">
+            </div>
+
+            <div class="auth-field">
+              <label for="authPassword">Сырсөз</label>
+              <input id="authPassword" type="password" minlength="8" placeholder="Кеминде 8 белги" autocomplete="current-password">
+            </div>
+          </div>
+
+          <div class="auth-actions">
+            <button id="authSubmitBtn" class="submit-btn auth-submit" onclick="submitAuth()">Кирүү</button>
+          </div>
+
+          <div class="auth-helper" id="authHelperText">
+            Админ укугу кадимки каттоодо берилбейт. Коопсуздук үчүн users/{uid}.role маанисин Firebase'де admin кылып кол менен коюңуз.
+          </div>
+        </div>
+
+        <div class="auth-profile" id="authProfilePanel" style="display:none">
+          <div class="selected-person auth-user-card">
+            <div class="avatar" id="authUserAvatar"></div>
+            <div>
+              <div class="name" id="authUserName"></div>
+              <div class="person-role" id="authUserMeta"></div>
+            </div>
+            <span class="role-pill" id="authUserRole"></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -72,22 +131,9 @@
       <div class="time-error" id="timeError"></div>
     </div>
 
-    <div class="card card-search">
+    <div class="card">
       <div class="step-label">4-кадам — Ким брондойт</div>
-      <div class="search-wrap">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="personSearch" placeholder="Атын жаза баштаңыз..." oninput="searchPerson(this.value)" autocomplete="off">
-        <div class="dropdown" id="personDropdown" style="display:none"></div>
-      </div>
-
-      <div class="selected-person" id="selectedPersonEl" style="display:none">
-        <div class="avatar" id="selectedAvatar"></div>
-        <div>
-          <div class="name" id="selectedName"></div>
-          <div class="person-role" id="selectedRole"></div>
-        </div>
-        <button class="clear-btn" onclick="clearPerson()">✕</button>
-      </div>
+      <div class="selected-person booking-identity locked" id="bookingIdentity"></div>
     </div>
 
     <div class="card">
@@ -101,6 +147,11 @@
     <div class="success-banner" id="successBanner">
       <span class="icon">✅</span>
       <p>Арыз ийгиликтүү жөнөтүлдү! Администратордун тастыктоосун күтүңүз.</p>
+    </div>
+
+    <div class="card">
+      <div class="step-label">Менин арыздарым</div>
+      <div id="myRequestsList"></div>
     </div>
   </div>
 </div>

@@ -247,6 +247,22 @@ async function ensureUserProfile(user, preferredName = "") {
   return normalizedProfile;
 }
 
+async function loadUserRequests(uid, halls) {
+  if (!uid || !halls.length) {
+    return [];
+  }
+
+  const requestSnapshots = await Promise.all(
+    halls.map(hall =>
+      getDocs(query(collection(db, "halls", hall.id, "bookingRequests"), where("userId", "==", uid)))
+    )
+  );
+
+  return requestSnapshots
+    .flatMap(snapshot => snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })))
+    .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt));
+}
+
 async function refreshAppData() {
   if (!state.currentUser) {
     clearAuthenticatedState();
@@ -263,15 +279,14 @@ async function refreshAppData() {
   try {
     const tasks = [
       getDocs(query(collection(db, "halls"), orderBy("createdAt", "asc"))),
-      getDocs(collectionGroup(db, "bookings")),
-      getDocs(query(collectionGroup(db, "bookingRequests"), where("userId", "==", state.currentUser.uid)))
+      getDocs(collectionGroup(db, "bookings"))
     ];
 
     if (isAdmin()) {
       tasks.push(getDocs(collectionGroup(db, "bookingRequests")));
     }
 
-    const [hallsSnap, bookingsSnap, myRequestsSnap, adminRequestsSnap] = await Promise.all(tasks);
+    const [hallsSnap, bookingsSnap, adminRequestsSnap] = await Promise.all(tasks);
 
     state.halls = hallsSnap.docs.map(docSnap => ({
       id: docSnap.id,
@@ -280,9 +295,7 @@ async function refreshAppData() {
 
     state.bookings = buildBookingsMap(bookingsSnap);
 
-    state.myRequests = myRequestsSnap.docs
-      .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
-      .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt));
+    state.myRequests = await loadUserRequests(state.currentUser.uid, state.halls);
 
     state.adminRequests = isAdmin() && adminRequestsSnap
       ? adminRequestsSnap.docs

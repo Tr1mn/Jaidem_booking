@@ -20,7 +20,10 @@
   <div class="nav-actions">
     <div class="nav-tabs">
       <button id="bookingNavBtn" class="nav-tab active" data-page="booking" onclick="showPage('booking', this)">📅 Брондоо</button>
-      <button id="adminNavBtn" class="nav-tab" data-page="admin" onclick="showPage('admin', this)">🔒 Администратор</button>
+      <button id="adminNavBtn" class="nav-tab" data-page="admin" onclick="showPage('admin', this)">
+        <span id="adminNavLabel">🔒 Администратор</span>
+        <span id="adminNavBadge" class="nav-badge" style="display:none">0</span>
+      </button>
     </div>
     <div class="nav-session">
       <span id="navSessionLabel">Конок</span>
@@ -58,7 +61,7 @@
             </div>
 
             <div class="auth-field full" id="authGroupField" style="display:none">
-              <label for="authGroupNumber">Топ номери</label>
+              <label for="authGroupNumber">Кайсыл агым</label>
               <input id="authGroupNumber" type="text" maxlength="10" placeholder="Мисалы: 1.0" autocomplete="off">
             </div>
 

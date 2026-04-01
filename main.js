@@ -43,6 +43,7 @@ const db = initializeFirestore(app, {
 const BOOKING_DAY_START = 540;
 const BOOKING_DAY_END = 1440;
 const REQUEST_STATUSES = ["pending", "approved", "rejected", "question"];
+const ADMIN_REFRESH_INTERVAL_MS = 15000;
 
 const state = {
   selectedHall: null,
@@ -59,8 +60,12 @@ const state = {
   currentUser: null,
   authMode: "login",
   authPending: false,
-  descriptionOptions: ["Тренинг", "Жыйын", "Презентация", "Интервью", "Башка"]
+  descriptionOptions: ["Тренинг", "Жыйын", "Презентация", "Интервью", "Башка"],
+  knownPendingRequestIds: [],
+  adminNotificationReady: false
 };
+
+let adminRefreshTimer = null;
 
 const MONTHS_KY = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const DAYS_KY = ["Дш", "Шш", "Шр", "Бш", "Жм", "Иш", "Жк"];
@@ -151,7 +156,7 @@ function isValidGroupNumber(value) {
 
 function formatGroupLabel(value) {
   const normalized = normalizeGroupNumber(value);
-  return normalized ? `Топ ${normalized}` : "";
+  return normalized ? `Агым ${normalized}` : "";
 }
 
 function getUserMeta(user) {
@@ -186,6 +191,91 @@ function roleLabel(role) {
   return role === "admin" ? "Администратор" : "Колдонуучу";
 }
 
+function supportsBrowserNotifications() {
+  return typeof window !== "undefined" && "Notification" in window;
+}
+
+function resetAdminNotificationState() {
+  state.knownPendingRequestIds = [];
+  state.adminNotificationReady = false;
+}
+
+function syncAdminRefreshLoop() {
+  if (adminRefreshTimer) {
+    window.clearInterval(adminRefreshTimer);
+    adminRefreshTimer = null;
+  }
+
+  if (!isAdmin()) {
+    return;
+  }
+
+  adminRefreshTimer = window.setInterval(() => {
+    if (isAdmin() && !state.authPending) {
+      refreshAppData();
+    }
+  }, ADMIN_REFRESH_INTERVAL_MS);
+}
+
+async function requestAdminNotificationPermission() {
+  if (!isAdmin() || !supportsBrowserNotifications() || Notification.permission !== "default") {
+    return;
+  }
+
+  try {
+    await Notification.requestPermission();
+  } catch (error) {
+    console.error("Failed to request browser notification permission:", error);
+  }
+}
+
+function notifyAdminAboutNewRequests(newRequests) {
+  if (!newRequests.length) {
+    return;
+  }
+
+  const latestRequest = newRequests[0];
+  const requestCountLabel = newRequests.length > 1 ? `${newRequests.length} жаңы арыз` : "Жаңы арыз";
+  const latestUser = sanitizeSingleLine(latestRequest.userName || "Колдонуучу", 80);
+  const latestHall = sanitizeSingleLine(latestRequest.hallName || "зал", 80);
+
+  showToast(`🔔 ${requestCountLabel}: ${latestUser} · ${latestHall}`);
+
+  if (supportsBrowserNotifications() && Notification.permission === "granted") {
+    const body = newRequests.length > 1
+      ? `Акыркысы: ${latestUser} — ${latestHall}`
+      : `${latestUser} ${latestHall} үчүн брондоо жөнөттү`;
+
+    new Notification("Жаңы брондоо арызы", {
+      body,
+      tag: "jaidem-booking-admin",
+      renotify: true
+    });
+  }
+}
+
+function processAdminNotifications() {
+  if (!isAdmin()) {
+    resetAdminNotificationState();
+    return;
+  }
+
+  const pendingRequests = state.adminRequests.filter(item => safeStatus(item.status) === "pending");
+  const pendingRequestIds = pendingRequests.map(item => item.id);
+
+  if (!state.adminNotificationReady) {
+    state.knownPendingRequestIds = pendingRequestIds;
+    state.adminNotificationReady = true;
+    return;
+  }
+
+  const knownIds = new Set(state.knownPendingRequestIds);
+  const newRequests = pendingRequests.filter(item => !knownIds.has(item.id));
+
+  state.knownPendingRequestIds = pendingRequestIds;
+  notifyAdminAboutNewRequests(newRequests);
+}
+
 function safeStatus(status) {
   return REQUEST_STATUSES.includes(status) ? status : "pending";
 }
@@ -211,6 +301,7 @@ function clearAuthenticatedState() {
   state.bookings = {};
   state.adminRequests = [];
   state.myRequests = [];
+  resetAdminNotificationState();
   document.getElementById("daySchedule").style.display = "none";
 }
 
@@ -395,6 +486,7 @@ async function refreshAppData() {
     renderBookingIdentity();
     renderMyRequests();
     renderAdmin();
+    processAdminNotifications();
     updatePendingBadge();
     updateAuthUI();
 
@@ -682,6 +774,7 @@ function updateAuthUI() {
   const navSessionLabel = document.getElementById("navSessionLabel");
   const navLogoutBtn = document.getElementById("navLogoutBtn");
   const adminNavBtn = document.getElementById("adminNavBtn");
+  const adminNavLabel = document.getElementById("adminNavLabel");
   const loginModeBtn = document.getElementById("authModeLogin");
   const registerModeBtn = document.getElementById("authModeRegister");
 
@@ -711,7 +804,7 @@ function updateAuthUI() {
 
   adminNavBtn.disabled = !adminAccess;
   adminNavBtn.classList.toggle("locked", !adminAccess);
-  adminNavBtn.textContent = adminAccess ? "🛡 Администратор" : "🔒 Администратор";
+  adminNavLabel.textContent = adminAccess ? "🛡 Администратор" : "🔒 Администратор";
 
   if (isLoggedIn) {
     document.getElementById("authUserAvatar").textContent = getInitials(currentUser.name);
@@ -719,6 +812,8 @@ function updateAuthUI() {
     document.getElementById("authUserMeta").textContent = getUserMeta(currentUser);
     document.getElementById("authUserRole").textContent = roleLabel(currentUser.role);
   }
+
+  syncAdminRefreshLoop();
 
   if (!adminAccess && document.getElementById("page-admin").classList.contains("active")) {
     showPage("booking", document.getElementById("bookingNavBtn"));
@@ -1143,10 +1238,16 @@ async function createPlace() {
 }
 
 function updatePendingBadge() {
-  document.getElementById("pendingBadge").textContent =
-    isAdmin()
-      ? state.adminRequests.filter(item => item.status === "pending").length
-      : 0;
+  const pendingCount = isAdmin()
+    ? state.adminRequests.filter(item => safeStatus(item.status) === "pending").length
+    : 0;
+
+  const pendingBadge = document.getElementById("pendingBadge");
+  const adminNavBadge = document.getElementById("adminNavBadge");
+
+  pendingBadge.textContent = pendingCount;
+  adminNavBadge.textContent = pendingCount;
+  adminNavBadge.style.display = pendingCount > 0 && isAdmin() ? "inline-flex" : "none";
 }
 
 function showPage(page, button) {
@@ -1164,6 +1265,7 @@ function showPage(page, button) {
   }
 
   if (page === "admin") {
+    requestAdminNotificationPermission();
     renderAdmin();
   }
 }
@@ -1232,7 +1334,7 @@ async function submitAuth() {
   }
 
   if (state.authMode === "register" && !isValidGroupNumber(groupNumber)) {
-    showToast("❗ Топ номерин 1.0 форматында жазыңыз");
+    showToast("❗ Агымды 1.0 форматында жазыңыз");
     return;
   }
 

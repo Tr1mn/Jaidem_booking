@@ -159,6 +159,10 @@ nav {
 }
 
 .nav-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid rgba(93, 42, 134, 0.12);
   background: rgba(255, 255, 255, 0.8);
   color: var(--text);
@@ -190,6 +194,22 @@ nav {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.nav-badge {
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent-strong), var(--red));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 10px 20px rgba(228, 93, 123, 0.22);
 }
 
 .nav-session {

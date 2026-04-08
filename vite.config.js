@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "/Jaidem_booking/",
+  base: "./",
   build: {
     outDir: "docs",
     emptyOutDir: true

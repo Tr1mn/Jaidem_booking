@@ -1,12 +1,15 @@
 {
-  "name": "temirlan-portfolio",
+  "name": "jaidem",
   "private": true,
-  "version": "2.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
+  },
+  "dependencies": {
+    "firebase": "^12.11.0"
   },
   "devDependencies": {
     "vite": "^7.1.9"

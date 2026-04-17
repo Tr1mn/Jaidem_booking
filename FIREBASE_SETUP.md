@@ -1,6 +1,6 @@
 # Firebase Setup
 
-This app now uses Firebase Authentication plus Firestore security rules.
+This app now uses a public booking flow plus admin-only Firebase Authentication.
 
 ## 0. Environment variables
 
@@ -8,7 +8,7 @@ This app now uses Firebase Authentication plus Firestore security rules.
 - Keep `.env` local only. It is git-ignored.
 - Use `.env.example` as the template for other environments.
 
-## 1. Enable login
+## 1. Enable admin login
 
 In Firebase Console:
 
@@ -30,22 +30,32 @@ Or paste the same rules into the Firestore Rules editor in Firebase Console.
 
 ## 3. Create the first admin
 
-For security, new users are always created with role `user`.
+Public visitors no longer register in the app. Create the admin manually:
 
-To create the first admin:
+1. Open `Authentication`.
+2. Open `Users`.
+3. Create a user with email and password for the admin.
+4. Copy that user's `uid`.
+5. Open Firestore Console.
+6. Create the document `users/{uid}` with at least these fields:
 
-1. Register a normal account in the app.
-2. Open Firestore Console.
-3. Go to `users/{uid}` for that account.
-4. Change `role` from `user` to `admin`.
-5. Sign out and sign in again.
+```json
+{
+  "uid": "same uid from Authentication",
+  "email": "admin@example.com",
+  "name": "Admin Name",
+  "role": "admin"
+}
+```
+
+7. Sign in through the admin page in the app.
 
 ## 4. Security notes
 
-- SQL injection is not the main risk here because the app uses Firestore, not SQL.
-- The important protections are Firebase Auth, Firestore Rules, and output escaping in the UI.
-- User text is now escaped before rendering so stored content cannot inject HTML or scripts into the page.
-- Booking slots are only created after admin approval, which avoids rejected requests permanently blocking time.
+- The public site can read halls and approved booking slots, and it can submit booking requests without login.
+- Only admins can read submitted requests, approve or reject them, and create final booking slots.
+- User text is escaped before rendering so stored content cannot inject HTML or scripts into the page.
+- Booking slots are created only after admin approval, which avoids rejected requests permanently blocking time.
 
 ## 5. Build for GitHub Pages
 

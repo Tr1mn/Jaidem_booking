@@ -1,11 +1,9 @@
 import { initializeApp } from "firebase/app";
 import {
-  createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signOut,
-  updateProfile
+  signOut
 } from "firebase/auth";
 import {
   addDoc,
@@ -18,7 +16,6 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where
 } from "firebase/firestore";
@@ -44,6 +41,7 @@ const BOOKING_DAY_START = 540;
 const BOOKING_DAY_END = 1440;
 const REQUEST_STATUSES = ["pending", "approved", "rejected", "question"];
 const ADMIN_REFRESH_INTERVAL_MS = 15000;
+const BOOKING_CONTACT_STORAGE_KEY = "jaidem-booking-contact";
 
 const state = {
   selectedHall: null,
@@ -52,13 +50,10 @@ const state = {
   currentYear: null,
   currentMonth: null,
   adminFilter: "all",
-  questionTargetId: null,
   halls: [],
   bookings: {},
   adminRequests: [],
-  myRequests: [],
   currentUser: null,
-  authMode: "login",
   authPending: false,
   descriptionOptions: ["Тренинг", "Жыйын", "Презентация", "Интервью", "Башка"],
   knownPendingRequestIds: [],
@@ -293,18 +288,10 @@ function getRequestMeta(request) {
   return formatDateTimeForDisplay(request.updatedAt || request.createdAt);
 }
 
-function clearAuthenticatedState() {
-  state.selectedHall = null;
-  state.selectedDate = null;
-  state.questionTargetId = null;
-  state.halls = [];
-  state.bookings = {};
+function clearAdminState() {
   state.adminRequests = [];
-  state.myRequests = [];
   resetAdminNotificationState();
-  document.getElementById("daySchedule").style.display = "none";
 }
-
 function buildBookingsMap(snapshot) {
   const bookingsMap = {};
 
@@ -325,103 +312,84 @@ function buildBookingsMap(snapshot) {
   return bookingsMap;
 }
 
-async function ensureUserProfile(user, preferredName = "", preferredGroupNumber = "") {
-  const userRef = doc(db, "users", user.uid);
-  const existing = await getDoc(userRef);
-  const fallbackName = sanitizeSingleLine(preferredName || user.displayName || user.email?.split("@")[0] || "Колдонуучу", 80);
-  const fallbackGroupNumber = normalizeGroupNumber(preferredGroupNumber);
+function canUseLocalStorage() {
+  return typeof window !== "undefined" && "localStorage" in window;
+}
 
-  if (!existing.exists()) {
-    const newProfile = {
-      uid: user.uid,
-      email: normalizeEmail(user.email || ""),
-      name: fallbackName,
-      role: "user",
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-
-    if (fallbackGroupNumber) {
-      newProfile.groupNumber = fallbackGroupNumber;
-    }
-
-    await setDoc(userRef, newProfile);
-
-    return {
-      uid: user.uid,
-      email: normalizeEmail(user.email || ""),
-      name: fallbackName,
-      role: "user",
-      groupNumber: fallbackGroupNumber
-    };
+function createGuestUserId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
   }
 
-  const profile = existing.data();
-  const normalizedGroupNumber = normalizeGroupNumber(profile.groupNumber || fallbackGroupNumber);
-  const normalizedProfile = {
-    uid: user.uid,
-    email: normalizeEmail(profile.email || user.email || ""),
-    name: sanitizeSingleLine(profile.name || fallbackName, 80) || fallbackName,
-    role: profile.role === "admin" ? "admin" : "user",
-    groupNumber: normalizedGroupNumber
+  return `guest-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function getBookingContactDetails() {
+  return {
+    name: sanitizeSingleLine(document.getElementById("bookingName")?.value, 80),
+    email: normalizeEmail(document.getElementById("bookingEmail")?.value),
+    groupNumber: normalizeGroupNumber(document.getElementById("bookingGroupNumber")?.value)
   };
-
-  const profileUpdates = {};
-
-  if (!profile.name && fallbackName) {
-    profileUpdates.name = fallbackName;
-  }
-
-  if (!profile.groupNumber && fallbackGroupNumber) {
-    profileUpdates.groupNumber = fallbackGroupNumber;
-  }
-
-  if (Object.keys(profileUpdates).length) {
-    await updateDoc(userRef, {
-      ...profileUpdates,
-      updatedAt: serverTimestamp()
-    });
-  }
-
-  return normalizedProfile;
 }
 
-async function loadUserRequests(uid, halls) {
-  if (!uid || !halls.length) {
-    return [];
-  }
-
-  const requestSnapshots = await Promise.allSettled(
-    halls.map(hall =>
-      getDocs(query(collection(db, "halls", hall.id, "bookingRequests"), where("userId", "==", uid)))
-    )
-  );
-
-  return requestSnapshots
-    .flatMap((snapshot, index) => {
-      if (snapshot.status !== "fulfilled") {
-        console.error(`Failed to load booking requests for hall ${halls[index]?.id || "unknown"}:`, snapshot.reason);
-        return [];
-      }
-
-      return snapshot.value.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-    })
-    .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt));
-}
-
-async function refreshAppData() {
-  if (!state.currentUser) {
-    clearAuthenticatedState();
-    renderHallOptions();
-    renderCalendar();
-    renderBookingIdentity();
-    renderMyRequests();
-    renderAdmin();
-    updatePendingBadge();
-    updateAuthUI();
+function persistBookingContact() {
+  if (!canUseLocalStorage()) {
     return;
   }
 
+  try {
+    window.localStorage.setItem(BOOKING_CONTACT_STORAGE_KEY, JSON.stringify(getBookingContactDetails()));
+  } catch (error) {
+    console.error("Failed to save booking contact locally:", error);
+  }
+}
+
+function hydrateBookingContactInputs() {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(BOOKING_CONTACT_STORAGE_KEY);
+
+    if (!rawValue) {
+      return;
+    }
+
+    const savedContact = JSON.parse(rawValue);
+
+    document.getElementById("bookingName").value = sanitizeSingleLine(savedContact?.name, 80);
+    document.getElementById("bookingEmail").value = normalizeEmail(savedContact?.email);
+    document.getElementById("bookingGroupNumber").value = normalizeGroupNumber(savedContact?.groupNumber);
+  } catch (error) {
+    console.error("Failed to restore booking contact locally:", error);
+  }
+}
+
+async function loadAdminProfile(user) {
+  const userRef = doc(db, "users", user.uid);
+  const profileSnapshot = await getDoc(userRef);
+
+  if (!profileSnapshot.exists()) {
+    return null;
+  }
+
+  const profile = profileSnapshot.data();
+
+  if (profile.role !== "admin") {
+    return null;
+  }
+
+  return {
+    uid: user.uid,
+    email: normalizeEmail(profile.email || user.email || ""),
+    name: sanitizeSingleLine(profile.name || user.displayName || user.email?.split("@")[0] || "Администратор", 80),
+    role: "admin",
+    groupNumber: normalizeGroupNumber(profile.groupNumber)
+  };
+}
+
+async function refreshAppData() {
   try {
     const [hallsResult, bookingsResult, adminRequestsResult] = await Promise.allSettled([
       getDocs(query(collection(db, "halls"), orderBy("createdAt", "asc"))),
@@ -450,14 +418,6 @@ async function refreshAppData() {
       console.error("Failed to load bookings:", bookingsResult.reason);
     }
 
-    try {
-      state.myRequests = await loadUserRequests(state.currentUser.uid, state.halls);
-    } catch (error) {
-      hasPartialFailure = true;
-      state.myRequests = [];
-      console.error("Failed to load current user requests:", error);
-    }
-
     if (isAdmin()) {
       if (adminRequestsResult.status === "fulfilled" && adminRequestsResult.value) {
         state.adminRequests = adminRequestsResult.value.docs
@@ -465,11 +425,11 @@ async function refreshAppData() {
           .sort((a, b) => timestampToMillis(b.updatedAt || b.createdAt) - timestampToMillis(a.updatedAt || a.createdAt));
       } else {
         hasPartialFailure = true;
-        state.adminRequests = [];
+        clearAdminState();
         console.error("Failed to load admin requests:", adminRequestsResult.status === "rejected" ? adminRequestsResult.reason : "No data");
       }
     } else {
-      state.adminRequests = [];
+      clearAdminState();
     }
 
     if (state.selectedHall) {
@@ -484,7 +444,6 @@ async function refreshAppData() {
 
     renderHallOptions();
     renderBookingIdentity();
-    renderMyRequests();
     renderAdmin();
     processAdminNotifications();
     updatePendingBadge();
@@ -495,10 +454,10 @@ async function refreshAppData() {
     }
   } catch (error) {
     console.error("Failed to load Firestore data:", error);
+    clearAdminState();
     renderHallOptions();
     renderCalendar();
     renderBookingIdentity();
-    renderMyRequests();
     renderAdmin();
     updatePendingBadge();
     updateAuthUI();
@@ -508,16 +467,6 @@ async function refreshAppData() {
 
 function renderHallOptions() {
   const hallGrid = document.getElementById("hallGrid");
-
-  if (!state.currentUser) {
-    hallGrid.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">🔐</div>
-        <p>Алгач аккаунтка кириңиз же катталыңыз</p>
-      </div>
-    `;
-    return;
-  }
 
   if (!state.halls.length) {
     hallGrid.innerHTML = `
@@ -758,53 +707,36 @@ function selectHall(hallId) {
   validateTime();
 }
 
-function setAuthMode(mode) {
-  state.authMode = mode === "register" ? "register" : "login";
-  updateAuthUI();
-}
-
 function updateAuthUI() {
   const currentUser = state.currentUser;
   const guestPanel = document.getElementById("authGuestPanel");
   const profilePanel = document.getElementById("authProfilePanel");
-  const nameField = document.getElementById("authNameField");
-  const groupField = document.getElementById("authGroupField");
   const submitBtn = document.getElementById("authSubmitBtn");
-  const bookingSubmitBtn = document.getElementById("submitBtn");
   const navSessionLabel = document.getElementById("navSessionLabel");
   const navLogoutBtn = document.getElementById("navLogoutBtn");
   const adminNavBtn = document.getElementById("adminNavBtn");
   const adminNavLabel = document.getElementById("adminNavLabel");
-  const loginModeBtn = document.getElementById("authModeLogin");
-  const registerModeBtn = document.getElementById("authModeRegister");
+  const adminActions = document.getElementById("adminActions");
+  const adminTabs = document.querySelector(".admin-tabs");
 
-  const isLoggedIn = Boolean(currentUser);
+  const isLoggedIn = Boolean(currentUser) && isAdmin();
   const adminAccess = isAdmin();
 
   guestPanel.style.display = isLoggedIn ? "none" : "block";
   profilePanel.style.display = isLoggedIn ? "block" : "none";
-  nameField.style.display = state.authMode === "register" ? "block" : "none";
-  groupField.style.display = state.authMode === "register" ? "block" : "none";
-
-  loginModeBtn.classList.toggle("active", state.authMode === "login");
-  registerModeBtn.classList.toggle("active", state.authMode === "register");
 
   submitBtn.disabled = state.authPending;
-  submitBtn.textContent = state.authPending
-    ? (state.authMode === "login" ? "Кирүү..." : "Катталуу...")
-    : (state.authMode === "login" ? "Кирүү" : "Катталуу");
-
-  bookingSubmitBtn.disabled = !isLoggedIn;
-  bookingSubmitBtn.textContent = isLoggedIn ? "Арызды жөнөтүү →" : "Алгач кириңиз же катталыңыз";
+  submitBtn.textContent = state.authPending ? "Кирүү..." : "Кирүү";
 
   navSessionLabel.textContent = isLoggedIn
     ? `${currentUser.name} · ${roleLabel(currentUser.role)}`
-    : "Конок";
+    : "Публичный сайт";
   navLogoutBtn.style.display = isLoggedIn ? "inline-flex" : "none";
 
-  adminNavBtn.disabled = !adminAccess;
   adminNavBtn.classList.toggle("locked", !adminAccess);
-  adminNavLabel.textContent = adminAccess ? "🛡 Администратор" : "🔒 Администратор";
+  adminNavLabel.textContent = adminAccess ? "🛡 Администратор" : "🔐 Админ кирүү";
+  adminActions.style.display = adminAccess ? "flex" : "none";
+  adminTabs.style.display = adminAccess ? "flex" : "none";
 
   if (isLoggedIn) {
     document.getElementById("authUserAvatar").textContent = getInitials(currentUser.name);
@@ -814,89 +746,37 @@ function updateAuthUI() {
   }
 
   syncAdminRefreshLoop();
-
-  if (!adminAccess && document.getElementById("page-admin").classList.contains("active")) {
-    showPage("booking", document.getElementById("bookingNavBtn"));
-  }
 }
 
 function renderBookingIdentity() {
   const container = document.getElementById("bookingIdentity");
+  const { name, email, groupNumber } = getBookingContactDetails();
+  const hasRequiredFields = name.length >= 2 && isValidEmail(email);
+  const identityMeta = [
+    email || "",
+    formatGroupLabel(groupNumber || "")
+  ].filter(Boolean).join(" · ");
 
-  if (!state.currentUser) {
+  if (!name && !email && !groupNumber) {
     container.classList.add("locked");
     container.innerHTML = `
       <div class="avatar">🔐</div>
       <div class="identity-copy">
-        <strong>Алгач аккаунтка кириңиз</strong>
-        <div class="person-role">Катталган колдонуучулар гана брондоо арызын бере алышат.</div>
+        <strong>Өз маалыматыңызды жазыңыз</strong>
+        <div class="person-role">Аты-жөнүңүз менен email дарегиңиз брондоо арызына кошулат.</div>
       </div>
     `;
     return;
   }
 
-  container.classList.remove("locked");
+  container.classList.toggle("locked", !hasRequiredFields);
   container.innerHTML = `
-    <div class="avatar">${escapeHtml(getInitials(state.currentUser.name))}</div>
+    <div class="avatar">${escapeHtml(getInitials(name || email || "?"))}</div>
     <div>
-      <div class="name">${escapeHtml(state.currentUser.name)}</div>
-      <div class="person-role">${escapeHtml(getUserMeta(state.currentUser))}</div>
+      <div class="name">${escapeHtml(name || "Аты-жөнү толтурула элек")}</div>
+      <div class="person-role">${escapeHtml(identityMeta || "Email жана агым көрсөтүлөт")}</div>
     </div>
-    <span class="role-pill">${escapeHtml(roleLabel(state.currentUser.role))}</span>
-  `;
-}
-
-function renderMyRequests() {
-  const list = document.getElementById("myRequestsList");
-
-  if (!state.currentUser) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">📝</div>
-        <p>Киргенден кийин өз арыздарыңызды бул жерден көрөсүз</p>
-      </div>
-    `;
-    return;
-  }
-
-  if (!state.myRequests.length) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">📭</div>
-        <p>Азырынча сиздин арыздарыңыз жок</p>
-      </div>
-    `;
-    return;
-  }
-
-  list.innerHTML = `
-    <div class="requests-stack">
-      ${state.myRequests.map(request => {
-        const requestStatus = safeStatus(request.status);
-        const questionBlock = request.question
-          ? `<div class="inline-note">💬 ${escapeHtml(request.question)}</div>`
-          : "";
-
-        return `
-          <div class="request-card ${requestStatus}">
-            <div class="req-header">
-              <div>
-                <div class="req-title">${escapeHtml(request.hallName || "Зал")}</div>
-                <div class="req-meta">${escapeHtml(getRequestMeta(request))}</div>
-              </div>
-              <span class="status-badge ${requestStatus}">${escapeHtml(statusLabel(requestStatus))}</span>
-            </div>
-            <div class="req-details">
-              <div class="req-detail">📅 ${escapeHtml(request.date || "")}</div>
-              <div class="req-detail">🕐 ${escapeHtml(request.timeStart || "")} – ${escapeHtml(request.timeEnd || "")}</div>
-              ${request.userGroupNumber ? `<div class="req-detail">🎓 ${escapeHtml(formatGroupLabel(request.userGroupNumber))}</div>` : ""}
-              <div class="req-detail">🎯 ${escapeHtml(request.desc || "")}</div>
-            </div>
-            ${questionBlock}
-          </div>
-        `;
-      }).join("")}
-    </div>
+    <span class="role-pill">${escapeHtml(hasRequiredFields ? "Жөнөтүүчү" : "Толук эмес")}</span>
   `;
 }
 
@@ -916,8 +796,20 @@ function resetBookingForm() {
 }
 
 async function submitBooking() {
-  if (!state.currentUser) {
-    showToast("❗ Алгач кириңиз же катталыңыз");
+  const requester = getBookingContactDetails();
+
+  if (requester.name.length < 2) {
+    showToast("❗ Аты-жөнүңүздү жазыңыз");
+    return;
+  }
+
+  if (!isValidEmail(requester.email)) {
+    showToast("❗ Туура email жазыңыз");
+    return;
+  }
+
+  if (requester.groupNumber && !isValidGroupNumber(requester.groupNumber)) {
+    showToast("❗ Агымды 1.0 форматында жазыңыз же бош калтырыңыз");
     return;
   }
 
@@ -948,12 +840,13 @@ async function submitBooking() {
   const timeStart = document.getElementById("timeStart").value;
   const timeEnd = document.getElementById("timeEnd").value;
   const dateKey = formatDateForApi(state.selectedDate);
+  const guestUserId = createGuestUserId();
   const bookingRequest = {
     hallId: state.selectedHall.id,
     hallName: sanitizeSingleLine(state.selectedHall.name, 120),
-    userId: state.currentUser.uid,
-    userName: sanitizeSingleLine(state.currentUser.name, 80),
-    userEmail: normalizeEmail(state.currentUser.email),
+    userId: guestUserId,
+    userName: requester.name,
+    userEmail: requester.email,
     date: formatDateForDisplay(state.selectedDate),
     dateKey,
     timeStart,
@@ -967,11 +860,12 @@ async function submitBooking() {
     updatedAt: serverTimestamp()
   };
 
-  if (state.currentUser.groupNumber) {
-    bookingRequest.userGroupNumber = normalizeGroupNumber(state.currentUser.groupNumber);
+  if (requester.groupNumber) {
+    bookingRequest.userGroupNumber = requester.groupNumber;
   }
 
   try {
+    persistBookingContact();
     await addDoc(collection(db, "halls", state.selectedHall.id, "bookingRequests"), bookingRequest);
 
     await refreshAppData();
@@ -982,7 +876,7 @@ async function submitBooking() {
 
     setTimeout(() => {
       document.getElementById("successBanner").classList.remove("show");
-      document.getElementById("submitBtn").disabled = !state.currentUser;
+      document.getElementById("submitBtn").disabled = false;
       resetBookingForm();
     }, 2500);
   } catch (error) {
@@ -1009,7 +903,7 @@ function renderAdmin() {
     list.innerHTML = `
       <div class="empty-state">
         <div class="icon">🔒</div>
-        <p>Бул бөлүм администраторлор үчүн гана жеткиликтүү</p>
+        <p>Жогорудагы форма менен админ аккаунтка кириңиз</p>
       </div>
     `;
     return;
@@ -1060,7 +954,6 @@ function renderAdmin() {
           <div class="req-actions">
             <button class="btn-sm btn-approve" onclick="setStatus('${request.id}', 'approved')">✅ Тастыктоо</button>
             <button class="btn-sm btn-reject" onclick="setStatus('${request.id}', 'rejected')">❌ Четке кагуу</button>
-            <button class="btn-sm btn-question" onclick="openModal('${request.id}')">💬 Суроо берүү</button>
           </div>
         ` : ""}
       </div>
@@ -1138,56 +1031,6 @@ async function setStatus(id, status) {
   }
 }
 
-function openModal(id) {
-  if (!isAdmin()) {
-    showToast("⚠️ Бул аракет админ үчүн гана");
-    return;
-  }
-
-  state.questionTargetId = id;
-  document.getElementById("modalQuestion").value = "";
-  document.getElementById("modalOverlay").classList.add("open");
-}
-
-function closeModal() {
-  document.getElementById("modalOverlay").classList.remove("open");
-  state.questionTargetId = null;
-}
-
-async function sendQuestion() {
-  const question = sanitizeMultiline(document.getElementById("modalQuestion").value, 500);
-
-  if (!question) {
-    showToast("❗ Суроону жазыңыз");
-    return;
-  }
-
-  try {
-    const request = state.adminRequests.find(item => item.id === state.questionTargetId);
-
-    if (!request) {
-      showToast("⚠️ Арыз табылган жок");
-      return;
-    }
-
-    await updateDoc(
-      doc(db, "halls", request.hallId, "bookingRequests", state.questionTargetId),
-      {
-        question,
-        status: "question",
-        updatedAt: serverTimestamp()
-      }
-    );
-
-    closeModal();
-    await refreshAppData();
-    showToast("💬 Суроо жөнөтүлдү");
-  } catch (error) {
-    console.error("Failed to send question:", error);
-    showToast("⚠️ Суроо жөнөтүлгөн жок");
-  }
-}
-
 function openPlaceModal() {
   if (!isAdmin()) {
     showToast("⚠️ Бул аракет админ үчүн гана");
@@ -1251,11 +1094,6 @@ function updatePendingBadge() {
 }
 
 function showPage(page, button) {
-  if (page === "admin" && !isAdmin()) {
-    showToast("🔒 Админ панель үчүн admin аккаунт керек");
-    return;
-  }
-
   document.querySelectorAll(".page").forEach(element => element.classList.remove("active"));
   document.getElementById(`page-${page}`).classList.add("active");
 
@@ -1308,15 +1146,13 @@ function getAuthErrorMessage(error) {
     case "auth/too-many-requests":
       return "Сураныч, бир аздан кийин кайра аракет кылыңыз.";
     default:
-      return "Аутентификация аткарылган жок.";
+      return "Админ кирүү мүмкүн болгон жок.";
   }
 }
 
 async function submitAuth() {
   const email = normalizeEmail(document.getElementById("authEmail").value);
   const password = document.getElementById("authPassword").value;
-  const name = sanitizeSingleLine(document.getElementById("authName").value, 80);
-  const groupNumber = normalizeGroupNumber(document.getElementById("authGroupNumber").value);
 
   if (!isValidEmail(email)) {
     showToast("❗ Туура email жазыңыз");
@@ -1328,37 +1164,14 @@ async function submitAuth() {
     return;
   }
 
-  if (state.authMode === "register" && name.length < 2) {
-    showToast("❗ Аты-жөнүңүздү жазыңыз");
-    return;
-  }
-
-  if (state.authMode === "register" && !isValidGroupNumber(groupNumber)) {
-    showToast("❗ Агымды 1.0 форматында жазыңыз");
-    return;
-  }
-
   state.authPending = true;
   updateAuthUI();
 
   try {
-    if (state.authMode === "register") {
-      const credentials = await createUserWithEmailAndPassword(auth, email, password);
-
-      await updateProfile(credentials.user, { displayName: name });
-      state.currentUser = await ensureUserProfile(credentials.user, name, groupNumber);
-      await refreshAppData();
-      showToast("✅ Аккаунт түзүлдү");
-    } else {
-      await signInWithEmailAndPassword(auth, email, password);
-      showToast("✅ Ийгиликтүү кирдиңиз");
-    }
+    await signInWithEmailAndPassword(auth, email, password);
+    showToast("✅ Админ аккаунт текшерилүүдө");
 
     document.getElementById("authPassword").value = "";
-    if (state.authMode === "register") {
-      document.getElementById("authName").value = "";
-      document.getElementById("authGroupNumber").value = "";
-    }
   } catch (error) {
     console.error("Auth action failed:", error);
     showToast(`⚠️ ${getAuthErrorMessage(error)}`);
@@ -1385,20 +1198,16 @@ window.selectDesc = selectDesc;
 window.submitBooking = submitBooking;
 window.filterAdmin = filterAdmin;
 window.setStatus = setStatus;
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.sendQuestion = sendQuestion;
 window.openPlaceModal = openPlaceModal;
 window.closePlaceModal = closePlaceModal;
 window.createPlace = createPlace;
 window.showPage = showPage;
 window.validateTime = validateTime;
 window.submitAuth = submitAuth;
-window.setAuthMode = setAuthMode;
 window.logoutUser = logoutUser;
 
 function attachAuthInputHandlers() {
-  ["authName", "authGroupNumber", "authEmail", "authPassword"].forEach(id => {
+  ["authEmail", "authPassword"].forEach(id => {
     const element = document.getElementById(id);
 
     element.addEventListener("keydown", event => {
@@ -1410,39 +1219,56 @@ function attachAuthInputHandlers() {
   });
 }
 
+function attachBookingIdentityHandlers() {
+  ["bookingName", "bookingEmail", "bookingGroupNumber"].forEach(id => {
+    const element = document.getElementById(id);
+
+    element.addEventListener("input", () => {
+      persistBookingContact();
+      renderBookingIdentity();
+    });
+  });
+}
+
 async function bootstrap() {
   renderDescriptionOptions();
   initCalendar();
+  hydrateBookingContactInputs();
   renderHallOptions();
   renderBookingIdentity();
-  renderMyRequests();
   renderAdmin();
   updatePendingBadge();
   updateAuthUI();
   attachAuthInputHandlers();
+  attachBookingIdentityHandlers();
 
   onAuthStateChanged(auth, async user => {
     state.authPending = false;
 
     if (!user) {
       state.currentUser = null;
-      clearAuthenticatedState();
-      renderHallOptions();
-      renderCalendar();
-      renderBookingIdentity();
-      renderMyRequests();
-      renderAdmin();
-      updatePendingBadge();
-      updateAuthUI();
+      clearAdminState();
+      await refreshAppData();
       return;
     }
 
     try {
-      state.currentUser = await ensureUserProfile(user);
+      const adminProfile = await loadAdminProfile(user);
+
+      if (!adminProfile) {
+        state.currentUser = null;
+        clearAdminState();
+        await signOut(auth);
+        showToast("🔒 Бул бөлүмгө admin аккаунт менен гана кирүүгө болот");
+        return;
+      }
+
+      state.currentUser = adminProfile;
       await refreshAppData();
+      showToast("✅ Администратор катары кирдиңиз");
     } catch (error) {
       console.error("Failed to sync auth state:", error);
-      showToast("⚠️ Колдонуучу профили даярдалган жок");
+      showToast("⚠️ Админ профили даярдалган жок");
     } finally {
       updateAuthUI();
     }

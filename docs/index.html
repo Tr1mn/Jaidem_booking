@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Зал брондоо</title>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/Jaidem_booking/assets/index-DQ3NoFcK.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="/Jaidem_booking/assets/index-C0TzuIKr.js"></script>
   <link rel="stylesheet" crossorigin href="/Jaidem_booking/assets/index-myGhpxc1.css">
 </head>
 <body>
@@ -22,12 +22,12 @@
     <div class="nav-tabs">
       <button id="bookingNavBtn" class="nav-tab active" data-page="booking" onclick="showPage('booking', this)">📅 Брондоо</button>
       <button id="adminNavBtn" class="nav-tab" data-page="admin" onclick="showPage('admin', this)">
-        <span id="adminNavLabel">🔒 Администратор</span>
+        <span id="adminNavLabel">🔐 Админ кирүү</span>
         <span id="adminNavBadge" class="nav-badge" style="display:none">0</span>
       </button>
     </div>
     <div class="nav-session">
-      <span id="navSessionLabel">Конок</span>
+      <span id="navSessionLabel">Публичный сайт</span>
       <button id="navLogoutBtn" class="nav-ghost-btn" onclick="logoutUser()" style="display:none">Чыгуу</button>
     </div>
   </div>
@@ -42,54 +42,12 @@
     </div>
 
     <div class="card">
-      <div class="step-label">Аккаунт</div>
+      <div class="step-label">Ачык жеткиликтүүлүк</div>
       <div class="auth-shell">
-        <div class="auth-panel" id="authGuestPanel">
+        <div class="auth-panel">
           <div class="auth-copy">
-            <h2>Кирүү же катталуу</h2>
-            <p>Брондоо үчүн аккаунт керек. Катталган колдонуучулар гана арыз бере алышат, администраторлор болсо арыздарды башкарат.</p>
-          </div>
-
-          <div class="auth-toggle">
-            <button id="authModeLogin" class="auth-toggle-btn active" onclick="setAuthMode('login')">Кирүү</button>
-            <button id="authModeRegister" class="auth-toggle-btn" onclick="setAuthMode('register')">Катталуу</button>
-          </div>
-
-          <div class="auth-grid">
-            <div class="auth-field full" id="authNameField" style="display:none">
-              <label for="authName">Аты-жөнү</label>
-              <input id="authName" type="text" maxlength="80" placeholder="Мисалы: Aida Asanbekova" autocomplete="name">
-            </div>
-
-            <div class="auth-field full" id="authGroupField" style="display:none">
-              <label for="authGroupNumber">Кайсыл агым</label>
-              <input id="authGroupNumber" type="text" maxlength="10" placeholder="Мисалы: 1.0" autocomplete="off">
-            </div>
-
-            <div class="auth-field">
-              <label for="authEmail">Email</label>
-              <input id="authEmail" type="email" maxlength="254" placeholder="name@example.com" autocomplete="email">
-            </div>
-
-            <div class="auth-field">
-              <label for="authPassword">Сырсөз</label>
-              <input id="authPassword" type="password" minlength="8" placeholder="Кеминде 8 белги" autocomplete="current-password">
-            </div>
-          </div>
-
-          <div class="auth-actions">
-            <button id="authSubmitBtn" class="submit-btn auth-submit" onclick="submitAuth()">Кирүү</button>
-          </div>
-        </div>
-
-        <div class="auth-profile" id="authProfilePanel" style="display:none">
-          <div class="selected-person auth-user-card">
-            <div class="avatar" id="authUserAvatar"></div>
-            <div>
-              <div class="name" id="authUserName"></div>
-              <div class="person-role" id="authUserMeta"></div>
-            </div>
-            <span class="role-pill" id="authUserRole"></span>
+            <h2>Сайт баарына ачык</h2>
+            <p>Бул GitHub сайтында брондоо үчүн аккаунт керек эмес. Каалаган адам арыз бере алат, ал эми администратор гана өз бөлүмүнөн кирип арызды тастыктайт же четке кагат.</p>
           </div>
         </div>
       </div>
@@ -138,6 +96,23 @@
 
     <div class="card">
       <div class="step-label">4-кадам — Ким брондойт</div>
+      <div class="auth-grid booking-contact-grid">
+        <div class="auth-field full">
+          <label for="bookingName">Аты-жөнү</label>
+          <input id="bookingName" type="text" maxlength="80" placeholder="Мисалы: Aida Asanbekova" autocomplete="name">
+        </div>
+
+        <div class="auth-field">
+          <label for="bookingEmail">Email</label>
+          <input id="bookingEmail" type="email" maxlength="254" placeholder="name@example.com" autocomplete="email">
+        </div>
+
+        <div class="auth-field">
+          <label for="bookingGroupNumber">Кайсыл агым</label>
+          <input id="bookingGroupNumber" type="text" maxlength="10" placeholder="Мисалы: 1.0 (милдеттүү эмес)" autocomplete="off">
+        </div>
+      </div>
+
       <div class="selected-person booking-identity locked" id="bookingIdentity"></div>
     </div>
 
@@ -151,12 +126,7 @@
 
     <div class="success-banner" id="successBanner">
       <span class="icon">✅</span>
-      <p>Арыз ийгиликтүү жөнөтүлдү! Администратордун тастыктоосун күтүңүз.</p>
-    </div>
-
-    <div class="card">
-      <div class="step-label">Менин арыздарым</div>
-      <div id="myRequestsList"></div>
+      <p>Арыз ийгиликтүү жөнөтүлдү! Администратор email аркылуу байланыша алат.</p>
     </div>
   </div>
 </div>
@@ -166,10 +136,49 @@
     <div class="page-header">
       <div class="page-kicker">Jaidem admin</div>
       <h1>Администратор панели</h1>
-      <p>Брондоо арыздарын башкаруу</p>
+      <p>Бул бөлүмгө администратор гана кирет жана арыздарды ушул жерден тастыктайт же четке кагат.</p>
 
-      <div style="margin-top:16px; display:flex; gap:12px; flex-wrap:wrap;">
+      <div id="adminActions" style="margin-top:16px; display:none; gap:12px; flex-wrap:wrap;">
         <button class="submit-btn" style="width:auto; padding:12px 18px;" onclick="openPlaceModal()">➕ Жаңы зал кошуу</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="step-label">Админ кирүү</div>
+      <div class="auth-shell">
+        <div class="auth-panel" id="authGuestPanel">
+          <div class="auth-copy">
+            <h2>Админ аккаунт менен кириңиз</h2>
+            <p>Бул форма жалпы колдонуучулар үчүн эмес. Киргенден кийин жаңы арыздарды көрүп, аларды тастыктай же четке кага аласыз.</p>
+          </div>
+
+          <div class="auth-grid">
+            <div class="auth-field">
+              <label for="authEmail">Email</label>
+              <input id="authEmail" type="email" maxlength="254" placeholder="admin@example.com" autocomplete="email">
+            </div>
+
+            <div class="auth-field">
+              <label for="authPassword">Сырсөз</label>
+              <input id="authPassword" type="password" minlength="8" placeholder="Кеминде 8 белги" autocomplete="current-password">
+            </div>
+          </div>
+
+          <div class="auth-actions">
+            <button id="authSubmitBtn" class="submit-btn auth-submit" onclick="submitAuth()">Кирүү</button>
+          </div>
+        </div>
+
+        <div class="auth-profile" id="authProfilePanel" style="display:none">
+          <div class="selected-person auth-user-card">
+            <div class="avatar" id="authUserAvatar"></div>
+            <div>
+              <div class="name" id="authUserName"></div>
+              <div class="person-role" id="authUserMeta"></div>
+            </div>
+            <span class="role-pill" id="authUserRole"></span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -178,21 +187,9 @@
       <button class="admin-tab" onclick="filterAdmin('pending', this)">Каралууда <span class="badge" id="pendingBadge">0</span></button>
       <button class="admin-tab" onclick="filterAdmin('approved', this)">Тастыкталган</button>
       <button class="admin-tab" onclick="filterAdmin('rejected', this)">Четке кагылган</button>
-      <button class="admin-tab" onclick="filterAdmin('question', this)">Суроо бар</button>
     </div>
 
     <div id="adminList"></div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal">
-    <h3>💬 Арыз берүүчүгө суроо</h3>
-    <textarea id="modalQuestion" rows="4" placeholder="Суроо же тактоо жазыңыз..."></textarea>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal()">Жокко чыгаруу</button>
-      <button class="btn-send" onclick="sendQuestion()">Суроону жөнөтүү</button>
-    </div>
   </div>
 </div>
 
